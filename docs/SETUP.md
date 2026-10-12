@@ -29,14 +29,20 @@ Settings → Secrets and variables → Actions → New repository secret:
 | `ASC_ISSUER_ID` | Issuer ID |
 | `ASC_KEY_P8_BASE64` | `base64 -i AuthKey_XXXX.p8` output |
 | `APPLE_TEAM_ID` | Team ID |
-| `SUPABASE_URL` | `https://<project>.supabase.co` |
-| `SUPABASE_ANON_KEY` | Supabase anon (public) key |
+| `CLOUDFLARE_API_TOKEN` | Custom token `gunce-github-deploy`: Account → Workers Scripts Edit, D1 Edit, Account Settings Read; only your account |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → Workers & Pages → Account ID |
+
+Repository **variable** (Secrets and variables → Actions → Variables): `APPLE_BUNDLE_ID` = the
+app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience.
 
 After saving, delete the downloaded `.p8` from Downloads or move it to a password manager.
 
-## 4. Supabase
+## 4. Cloudflare (Workers Paid)
 
-1. Create a project (region: Frankfurt `eu-central-1`).
-2. Authentication → Providers → **Apple**: enable, bundle ID as client ID.
-3. Apply `supabase/migrations/` (SQL editor, or `supabase db push`).
-4. Never share the `service_role` key; it is only set as an Edge Function secret.
+Nothing to click. The `Deploy Worker` workflow finds or creates the `gunce` D1 database
+(location hint: Eastern Europe), applies `worker/migrations/`, deploys the Worker to
+`https://gunce.<subdomain>.workers.dev` and checks `/health`. Run it once by hand from
+Actions → Deploy Worker → Run workflow, or push a change under `worker/`.
+
+A custom domain later: add a `routes` entry in `worker/wrangler.jsonc` and give the token
+Zone → Workers Routes → Edit for that zone.
