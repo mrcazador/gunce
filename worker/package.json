@@ -1,0 +1,18 @@
+{
+  "name": "gunce-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
+    "migrate:local": "wrangler d1 migrations apply gunce --local"
+  },
+  "dependencies": {
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261012.1",
+    "typescript": "7.0.2",
+    "wrangler": "4.149.0"
+  }
+}
