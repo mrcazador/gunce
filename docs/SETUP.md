@@ -15,7 +15,8 @@ One-time steps that only the account owner can do. Nothing here is ever committe
 1. Create the app record: App Store Connect → Apps → + → New App
    (iOS, name "Günce", bundle ID `com.<you>.gunce`, SKU `gunce`).
 2. Create an API key: Users and Access → Integrations → App Store Connect API →
-   Team Keys → +, role **App Manager**. Download the `.p8` once. Note the **Key ID** and
+   Team Keys → +, role **Admin** (CI signs with a cloud-managed distribution certificate,
+   which App Manager keys cannot use). Download the `.p8` once. Note the **Key ID** and
    **Issuer ID**.
 3. Note your **Team ID** (developer.apple.com → Membership details).
 
