@@ -90,7 +90,7 @@ jobs:
             | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*deprecated|ARCHIVE (SUCCEEDED|FAILED)" || true
           test -d "$RUNNER_TEMP/Gunce.xcarchive" || { tail -200 "$RUNNER_TEMP/archive.log"; exit 1; }
 
-      - name: Upload to TestFlight
+      - name: Export signed IPA
         run: |
           sed "s/__TEAM_ID__/${TEAM_ID}/" ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
           xcodebuild -exportArchive \
@@ -101,6 +101,25 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Verify signature
+        run: |
+          # Only the certificate kind is printed; names in the certificate stay out of public logs.
+          app="$RUNNER_TEMP/Gunce.xcarchive/Products/Applications/Gunce.app"
+          echo "Archive:"; codesign -dvv "$app" 2>&1 | grep -oE "Authority=Apple [A-Za-z ]+" | head -1
+          mkdir -p "$RUNNER_TEMP/ipa" && unzip -q "$RUNNER_TEMP/export/Gunce.ipa" -d "$RUNNER_TEMP/ipa"
+          app="$RUNNER_TEMP/ipa/Payload/Gunce.app"
+          echo "IPA:"; codesign -dvv "$app" 2>&1 | grep -oE "Authority=Apple [A-Za-z ]+" | head -1
+          codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -p - || true
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Upload to TestFlight
+        env:
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/asc
+        run: |
+          xcrun altool --upload-app --type ios \
+            --file "$RUNNER_TEMP/export/Gunce.ipa" \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 
       - name: Remove key material
         if: always()
