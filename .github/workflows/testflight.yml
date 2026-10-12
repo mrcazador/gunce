@@ -72,6 +72,15 @@ jobs:
           echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
           chmod 600 "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
 
+      - name: Install Apple intermediate certificates
+        # Cloud signing builds the designated requirement from the local chain. Without the
+        # current WWDR intermediates the signature "does not satisfy its designated Requirement".
+        run: |
+          for c in AppleWWDRCAG3 AppleWWDRCAG4 AppleWWDRCAG5 AppleWWDRCAG6; do
+            curl -fsSL -o "$RUNNER_TEMP/$c.cer" "https://www.apple.com/certificateauthority/$c.cer"
+            sudo security import "$RUNNER_TEMP/$c.cer" -k /Library/Keychains/System.keychain || true
+          done
+
       - name: Archive
         run: |
           set -o pipefail
@@ -111,6 +120,7 @@ jobs:
           app="$RUNNER_TEMP/ipa/Payload/Gunce.app"
           echo "IPA:"; codesign -dvv "$app" 2>&1 | grep -oE "Authority=Apple [A-Za-z ]+" | head -1
           codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -p - || true
+          codesign -d -r- "$app" 2>&1 | grep designated || true
           codesign --verify --deep --strict --verbose=2 "$app"
 
       - name: Upload to TestFlight
