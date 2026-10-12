@@ -94,7 +94,7 @@ final class AppStore {
             .sorted(by: Self.recentFirst)
     }
 
-    private static func listOrder(_ a: TaskItem, _ b: TaskItem) -> Bool {
+    nonisolated private static func listOrder(_ a: TaskItem, _ b: TaskItem) -> Bool {
         func rank(_ s: TaskStatus) -> Int {
             switch s {
             case .active: 0
@@ -108,7 +108,7 @@ final class AppStore {
         return a.updatedAt > b.updatedAt
     }
 
-    private static func recentFirst(_ a: TaskItem, _ b: TaskItem) -> Bool {
+    nonisolated private static func recentFirst(_ a: TaskItem, _ b: TaskItem) -> Bool {
         a.updatedAt > b.updatedAt
     }
 

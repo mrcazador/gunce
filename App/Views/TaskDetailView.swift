@@ -175,7 +175,8 @@ private struct TaskDetailForm: View {
         if draft.hasRemind != original.hasRemind || (draft.hasRemind && draft.remindAt != original.remindAt) {
             fields["remind_at"] = JSONCoding.value(draft.hasRemind ? draft.remindAt : Optional<Date>.none)
         }
-        Task { await store.update(task, fields: fields) }
+        let changes = fields
+        Task { await store.update(task, fields: changes) }
     }
 }
 
