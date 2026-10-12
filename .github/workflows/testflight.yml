@@ -99,17 +99,47 @@ jobs:
             | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*deprecated|ARCHIVE (SUCCEEDED|FAILED)" || true
           test -d "$RUNNER_TEMP/Gunce.xcarchive" || { tail -200 "$RUNNER_TEMP/archive.log"; exit 1; }
 
-      - name: Export signed IPA
+      - name: Create short-lived signing identity
+        # Apple's cloud-managed certificate yields a designated requirement that does not
+        # match the certificate when the account name has non-ASCII letters (App Store 90035).
+        # So each build signs with its own certificate, revoked again at the end of the job.
+        env:
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
         run: |
-          sed "s/__TEAM_ID__/${TEAM_ID}/" ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check cryptography==44.0.3
+          ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            "$RUNNER_TEMP/venv/bin/python" ci/signing.py create "$RUNNER_TEMP/signing"
+
+          p12pw="$(cat "$RUNNER_TEMP/signing/p12-password")"
+          kcpw="$(openssl rand -hex 16)"
+          echo "::add-mask::$p12pw"
+          echo "::add-mask::$kcpw"
+          kc="$RUNNER_TEMP/signing/ci.keychain-db"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/signing/dist.p12" -k "$kc" -P "$p12pw" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+
+          uuid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["profile_uuid"])' "$RUNNER_TEMP/signing/state.json")"
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$RUNNER_TEMP/signing/dist.mobileprovision" "$dir/$uuid.mobileprovision"
+          done
+          echo "PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
+
+      - name: Export signed IPA
+        env:
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+        run: |
+          sed -e "s/__TEAM_ID__/${TEAM_ID}/" -e "s/__BUNDLE_ID__/${APPLE_BUNDLE_ID}/" -e "s/__PROFILE_UUID__/${PROFILE_UUID}/" \
+            ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Gunce.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportPath "$RUNNER_TEMP/export"
 
       - name: Verify signature
         run: |
@@ -130,6 +160,15 @@ jobs:
             --file "$RUNNER_TEMP/export/Gunce.ipa" \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
 
+      - name: Revoke short-lived signing identity
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/signing/state.json" ]; then
+            ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+              "$RUNNER_TEMP/venv/bin/python" ci/signing.py revoke "$RUNNER_TEMP/signing"
+          fi
+          security delete-keychain "$RUNNER_TEMP/signing/ci.keychain-db" 2>/dev/null || true
+
       - name: Remove key material
         if: always()
-        run: rm -rf "$RUNNER_TEMP/asc" App/Config/Secrets.xcconfig
+        run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/signing" App/Config/Secrets.xcconfig
