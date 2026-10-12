@@ -120,7 +120,6 @@ jobs:
           app="$RUNNER_TEMP/ipa/Payload/Gunce.app"
           echo "IPA:"; codesign -dvv "$app" 2>&1 | grep -oE "Authority=Apple [A-Za-z ]+" | head -1
           codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -p - || true
-          codesign -d -r- "$app" 2>&1 | grep designated || true
           codesign --verify --deep --strict --verbose=2 "$app"
 
       - name: Upload to TestFlight
