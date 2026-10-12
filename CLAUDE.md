@@ -15,9 +15,13 @@ comments, commit messages and README stay in English.
 | --- | --- | --- |
 | iOS app | SwiftUI, iOS 26+, SwiftData cache, WidgetKit, ActivityKit, EventKit, App Intents | `App/`, `Widgets/` |
 | Project file | XcodeGen (`project.yml`). Never hand-edit or commit `.xcodeproj` | `project.yml` |
-| Backend | Supabase (Postgres + Auth with Sign in with Apple + Edge Functions) | `supabase/` |
-| Claude access | Remote MCP server exposing task tools | `supabase/functions/mcp/` |
-| Delivery | GitHub Actions macOS runner → TestFlight | `.github/workflows/` |
+| Backend | Cloudflare Worker (TypeScript) + D1 (SQLite). Sign in with Apple → opaque session tokens | `worker/` |
+| Claude access | Remote MCP endpoint on the same Worker (planned) | `worker/src/` |
+| Delivery | App: GitHub Actions macOS runner → TestFlight. Backend: `deploy-worker.yml` → Cloudflare | `.github/workflows/` |
+
+API reference: `docs/API.md`. Schema changes are new files in `worker/migrations/` (never edit an
+applied migration). Run `npm run typecheck` and test locally with `wrangler dev` before pushing;
+a push to `main` that touches `worker/` migrates the remote D1 database and deploys.
 
 The cloud session that edits this repo runs on Linux: it cannot build or run the app.
 A push to `main` triggers `testflight.yml`, which builds on macOS and uploads to TestFlight;
@@ -33,7 +37,7 @@ and fix it.
 - A task has a status: `inbox`, `active`, `parked`, `done`, `archived`. Subtasks use `parent_id`.
 - **Exactly one active task per user.** Starting a task while another is active auto-parks the
   previous one and asks for a "nerede kaldın?" note. The database enforces this (partial unique
-  index) and `start_task()` does the switch atomically. Never work around it client-side.
+  index) and `POST /v1/tasks/:id/start` does the switch atomically in one D1 batch. Never work around it client-side.
 - Every state change writes a row to `task_events` (the "İz" history): created, started,
   parked (with note and reason), resumed, done.
 - Park reasons: `waiting` (Yanıt bekliyorum), `need_info` (Bilgi lazım), `later` (Sonra devam).
@@ -59,13 +63,15 @@ Design source: the "Günce — ekran taslakları" canvas. Follow Apple HIG; use 
 
 ## Security rules (public repo)
 
-1. **Never commit secrets**: no `.p8`, certificates, provisioning profiles, Supabase
-   `service_role` key, APNs key, MCP tokens, or `.env` files. Secrets live only in GitHub
-   Actions secrets and Supabase function secrets. `gitleaks` runs on every push.
-2. The Supabase **anon key and project URL may ship in the app** (they are public by design),
-   but only because **every table has Row Level Security** with `user_id = auth.uid()`.
-   A new table without RLS policies is a blocker.
-3. The `service_role` key is used only inside Edge Functions, never in the app.
+1. **Never commit secrets**: no `.p8`, certificates, provisioning profiles, Cloudflare API
+   tokens, APNs key, session/MCP tokens, `.dev.vars` or `.env` files. Secrets live only in
+   GitHub Actions secrets and Worker secrets (`wrangler secret put`). `gitleaks` runs on every push.
+2. **D1 has no row level security.** Isolation lives in the Worker: every query that touches
+   user data must bind `user_id = ?` from the authenticated session — never from the request
+   body or URL. A query without that scope is a blocker. Ownership triggers in the schema are
+   a second line of defence, not a replacement.
+3. Session tokens are random, stored only as SHA-256 hashes, and travel only in the
+   `Authorization: Bearer` header. The app ships only the API host, no keys.
 4. Workflows: trigger only on `push` to `main` and `workflow_dispatch`. Never add
    `pull_request_target`, never expose secrets to PRs from forks. Default
    `permissions: contents: read`. Pin third-party actions to a full commit SHA.

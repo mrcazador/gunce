@@ -45,3 +45,8 @@ node_modules/
 
 # --- OS ---
 .DS_Store
+
+# --- Cloudflare Worker ---
+.wrangler/
+.dev.vars*
+!.dev.vars.example
