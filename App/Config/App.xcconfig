@@ -1,0 +1,8 @@
+// Build settings shared by every configuration. Values here are placeholders; CI writes
+// the real ones to Secrets.xcconfig (git-ignored) from repository variables and secrets.
+
+GUNCE_BUNDLE_ID = com.example.gunce
+// API host without scheme, e.g. gunce.example.workers.dev ("//" starts a comment here).
+GUNCE_API_HOST =
+
+#include? "Secrets.xcconfig"

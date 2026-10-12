@@ -50,3 +50,7 @@ node_modules/
 .wrangler/
 .dev.vars*
 !.dev.vars.example
+
+# --- XcodeGen output ---
+App/Info.plist
+App/Gunce.entitlements

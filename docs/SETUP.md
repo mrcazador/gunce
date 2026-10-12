@@ -32,8 +32,16 @@ Settings → Secrets and variables → Actions → New repository secret:
 | `CLOUDFLARE_API_TOKEN` | Custom token `gunce-github-deploy`: Account → Workers Scripts Edit, D1 Edit, Account Settings Read; only your account |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → Workers & Pages → Account ID |
 
-Repository **variable** (Secrets and variables → Actions → Variables): `APPLE_BUNDLE_ID` = the
-app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience.
+Repository **variables** (Secrets and variables → Actions → Variables):
+
+| Variable | Value |
+| --- | --- |
+| `APPLE_BUNDLE_ID` | The app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience, and the app is built with it |
+| `API_HOST` | Optional. API host without `https://`. When unset, the TestFlight build uses `gunce.<subdomain>.workers.dev` |
+
+In the Apple Developer portal, the App ID needs the **Sign in with Apple** capability. Automatic
+signing in CI usually enables it; if the archive step fails on provisioning, turn it on by hand
+(Certificates, Identifiers & Profiles → Identifiers → the app → Sign in with Apple).
 
 After saving, delete the downloaded `.p8` from Downloads or move it to a password manager.
 
