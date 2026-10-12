@@ -91,7 +91,12 @@ def create(out: str) -> None:
         key=key,
         cert=x509.load_der_x509_certificate(der),
         cas=None,
-        encryption_algorithm=serialization.BestAvailableEncryption(password.encode()),
+        # macOS `security import` only reads the legacy PKCS#12 format (3DES, SHA-1 MAC).
+        encryption_algorithm=serialization.PrivateFormat.PKCS12.encryption_builder()
+        .kdf_rounds(50000)
+        .key_cert_algorithm(pkcs12.PBES.PBESv1SHA1And3KeyTripleDESCBC)
+        .hmac_hash(hashes.SHA1())
+        .build(password.encode()),
     )
     with open(os.path.join(out, "dist.p12"), "wb") as f:
         f.write(p12)
