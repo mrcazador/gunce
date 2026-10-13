@@ -1,0 +1,60 @@
+# XcodeGen spec. Generate the project with `xcodegen generate`; never commit the .xcodeproj.
+name: Gunce
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: tr
+
+configFiles:
+  Debug: App/Config/App.xcconfig
+  Release: App/Config/App.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  Gunce:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - "Config/**"
+          - "Info.plist"
+          - "Gunce.entitlements"
+    settings:
+      base:
+        PRODUCT_NAME: Gunce
+        # iPhone only. XcodeGen defaults iOS targets to "1,2", so this must sit on the target.
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        PRODUCT_BUNDLE_IDENTIFIER: $(GUNCE_BUNDLE_ID)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    entitlements:
+      path: App/Gunce.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Günce
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: tr
+        GunceAPIHost: $(GUNCE_API_HOST)
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait

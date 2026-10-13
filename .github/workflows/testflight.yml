@@ -41,16 +41,26 @@ jobs:
           brew install xcodegen
           xcodegen generate
 
-      - name: Write build secrets (never committed)
+      - name: Write build settings (never committed)
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+          API_HOST: ${{ vars.API_HOST }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # xcconfig treats "//" as a comment, so the URL is split around it.
-          host="${SUPABASE_URL#https://}"
+          test -n "$APPLE_BUNDLE_ID" || { echo "::error::Set the APPLE_BUNDLE_ID repository variable"; exit 1; }
+          # The API host is the Worker's workers.dev address unless API_HOST overrides it.
+          if [ -z "$API_HOST" ]; then
+            sub="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["subdomain"])')"
+            API_HOST="gunce.${sub}.workers.dev"
+          fi
+          echo "API host: $API_HOST"
+          # xcconfig treats "//" as a comment, so the host is stored without a scheme.
           {
-            echo "SUPABASE_HOST = ${host}"
-            echo "SUPABASE_ANON_KEY = ${SUPABASE_ANON_KEY}"
+            echo "GUNCE_API_HOST = ${API_HOST}"
+            echo "GUNCE_BUNDLE_ID = ${APPLE_BUNDLE_ID}"
             echo "DEVELOPMENT_TEAM = ${TEAM_ID}"
           } > App/Config/Secrets.xcconfig
 
@@ -61,6 +71,15 @@ jobs:
           mkdir -p "$RUNNER_TEMP/asc"
           echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
           chmod 600 "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Install Apple intermediate certificates
+        # Cloud signing builds the designated requirement from the local chain. Without the
+        # current WWDR intermediates the signature "does not satisfy its designated Requirement".
+        run: |
+          for c in AppleWWDRCAG3 AppleWWDRCAG4 AppleWWDRCAG5 AppleWWDRCAG6; do
+            curl -fsSL -o "$RUNNER_TEMP/$c.cer" "https://www.apple.com/certificateauthority/$c.cer"
+            sudo security import "$RUNNER_TEMP/$c.cer" -k /Library/Keychains/System.keychain || true
+          done
 
       - name: Archive
         run: |
@@ -80,18 +99,76 @@ jobs:
             | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*deprecated|ARCHIVE (SUCCEEDED|FAILED)" || true
           test -d "$RUNNER_TEMP/Gunce.xcarchive" || { tail -200 "$RUNNER_TEMP/archive.log"; exit 1; }
 
-      - name: Upload to TestFlight
+      - name: Create short-lived signing identity
+        # Apple's cloud-managed certificate yields a designated requirement that does not
+        # match the certificate when the account name has non-ASCII letters (App Store 90035).
+        # So each build signs with its own certificate, revoked again at the end of the job.
+        env:
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
         run: |
-          sed "s/__TEAM_ID__/${TEAM_ID}/" ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check cryptography==44.0.3
+          ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            "$RUNNER_TEMP/venv/bin/python" ci/signing.py create "$RUNNER_TEMP/signing"
+
+          p12pw="$(cat "$RUNNER_TEMP/signing/p12-password")"
+          kcpw="$(openssl rand -hex 16)"
+          echo "::add-mask::$p12pw"
+          echo "::add-mask::$kcpw"
+          kc="$RUNNER_TEMP/signing/ci.keychain-db"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/signing/dist.p12" -k "$kc" -P "$p12pw" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+
+          uuid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["profile_uuid"])' "$RUNNER_TEMP/signing/state.json")"
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$RUNNER_TEMP/signing/dist.mobileprovision" "$dir/$uuid.mobileprovision"
+          done
+          echo "PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
+
+      - name: Export signed IPA
+        env:
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+        run: |
+          sed -e "s/__TEAM_ID__/${TEAM_ID}/" -e "s/__BUNDLE_ID__/${APPLE_BUNDLE_ID}/" -e "s/__PROFILE_UUID__/${PROFILE_UUID}/" \
+            ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Gunce.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportPath "$RUNNER_TEMP/export"
+
+      - name: Verify signature
+        run: |
+          # Only the certificate kind is printed; names in the certificate stay out of public logs.
+          app="$RUNNER_TEMP/Gunce.xcarchive/Products/Applications/Gunce.app"
+          echo "Archive:"; codesign -dvv "$app" 2>&1 | grep -oE "Authority=Apple [A-Za-z ]+" | head -1
+          mkdir -p "$RUNNER_TEMP/ipa" && unzip -q "$RUNNER_TEMP/export/Gunce.ipa" -d "$RUNNER_TEMP/ipa"
+          app="$RUNNER_TEMP/ipa/Payload/Gunce.app"
+          echo "IPA:"; codesign -dvv "$app" 2>&1 | grep -oE "Authority=Apple [A-Za-z ]+" | head -1
+          codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -p - || true
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Upload to TestFlight
+        env:
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/asc
+        run: |
+          xcrun altool --upload-app --type ios \
+            --file "$RUNNER_TEMP/export/Gunce.ipa" \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Revoke short-lived signing identity
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/signing/state.json" ]; then
+            ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+              "$RUNNER_TEMP/venv/bin/python" ci/signing.py revoke "$RUNNER_TEMP/signing"
+          fi
+          security delete-keychain "$RUNNER_TEMP/signing/ci.keychain-db" 2>/dev/null || true
 
       - name: Remove key material
         if: always()
-        run: rm -rf "$RUNNER_TEMP/asc" App/Config/Secrets.xcconfig
+        run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/signing" App/Config/Secrets.xcconfig

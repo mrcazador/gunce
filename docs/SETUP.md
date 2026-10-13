@@ -15,7 +15,9 @@ One-time steps that only the account owner can do. Nothing here is ever committe
 1. Create the app record: App Store Connect → Apps → + → New App
    (iOS, name "Günce", bundle ID `com.<you>.gunce`, SKU `gunce`).
 2. Create an API key: Users and Access → Integrations → App Store Connect API →
-   Team Keys → +, role **App Manager**. Download the `.p8` once. Note the **Key ID** and
+   Team Keys → +, role **Admin**. Each TestFlight build creates its own Apple Distribution
+   certificate and App Store profile through this key and revokes both when it finishes
+   (`ci/signing.py`), so no signing key is stored anywhere. Download the `.p8` once. Note the **Key ID** and
    **Issuer ID**.
 3. Note your **Team ID** (developer.apple.com → Membership details).
 
@@ -32,8 +34,16 @@ Settings → Secrets and variables → Actions → New repository secret:
 | `CLOUDFLARE_API_TOKEN` | Custom token `gunce-github-deploy`: Account → Workers Scripts Edit, D1 Edit, Account Settings Read; only your account |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → Workers & Pages → Account ID |
 
-Repository **variable** (Secrets and variables → Actions → Variables): `APPLE_BUNDLE_ID` = the
-app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience.
+Repository **variables** (Secrets and variables → Actions → Variables):
+
+| Variable | Value |
+| --- | --- |
+| `APPLE_BUNDLE_ID` | The app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience, and the app is built with it |
+| `API_HOST` | Optional. API host without `https://`. When unset, the TestFlight build uses `gunce.<subdomain>.workers.dev` |
+
+In the Apple Developer portal, the App ID needs the **Sign in with Apple** capability. Automatic
+signing in CI usually enables it; if the archive step fails on provisioning, turn it on by hand
+(Certificates, Identifiers & Profiles → Identifiers → the app → Sign in with Apple).
 
 After saving, delete the downloaded `.p8` from Downloads or move it to a password manager.
 
