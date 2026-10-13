@@ -38,7 +38,7 @@ Repository **variables** (Secrets and variables → Actions → Variables):
 
 | Variable | Value |
 | --- | --- |
-| `APPLE_BUNDLE_ID` | The app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience, and the app is built with it |
+| `APPLE_BUNDLE_ID` | The app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience, and the app is built with it. The widget extension uses `<bundle ID>.widgets`; CI registers it and creates its profile |
 | `API_HOST` | Optional. API host without `https://`. When unset, the TestFlight build uses `gunce.<subdomain>.workers.dev` |
 
 In the Apple Developer portal, the App ID needs the **Sign in with Apple** capability. Automatic

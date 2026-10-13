@@ -49,6 +49,13 @@ final class ScreenshotTests: XCTestCase {
                 snap("\(prefix)-06-profil")
                 tap(app.navigationBars.buttons.firstMatch)
             }
+            if tap(app.staticTexts["Claude ile bağla"].firstMatch) {
+                snap("\(prefix)-06b-claude")
+                if tap(app.buttons["Bağlantı kodu oluştur"].firstMatch) {
+                    snap("\(prefix)-06c-claude-kod")
+                }
+                tap(app.navigationBars.buttons.firstMatch)
+            }
             tap(app.buttons["Bitti"].firstMatch)
         }
 

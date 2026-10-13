@@ -54,3 +54,5 @@ node_modules/
 # --- XcodeGen output ---
 App/Info.plist
 App/Gunce.entitlements
+Widgets/Info.plist
+Widgets/PickUpWidgets.entitlements

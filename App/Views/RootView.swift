@@ -65,6 +65,14 @@ struct MainTabs: View {
         .onChange(of: store.openTaskID) { _, id in
             if id != nil { selection = .now }
         }
+        // Links from the Lock Screen widget and Live Activity.
+        .onOpenURL { url in
+            guard url.scheme == "pickup" else { return }
+            selection = .now
+            if url.host == "park", let task = store.activeTask, store.parkRequest == nil {
+                store.requestPark(task)
+            }
+        }
         .task { await store.refresh() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

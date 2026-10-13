@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Short-lived App Store signing for CI.
 
-`create` makes a fresh Apple Distribution certificate and an App Store provisioning
-profile through the App Store Connect API, and writes a .p12 and .mobileprovision.
-`revoke` deletes both again, so no long-lived signing key ever exists outside Apple.
+`create` makes a fresh Apple Distribution certificate and App Store provisioning
+profiles (app and widget extension) through the App Store Connect API, and writes a
+.p12, `<uuid>.mobileprovision` files and state.json. `revoke` deletes them again,
+so no long-lived signing key ever exists outside Apple.
 
 Nothing identifying is printed: Apple puts the account holder's name into the
 certificate, and CI logs of this repository are public.
@@ -103,28 +104,45 @@ def create(out: str) -> None:
     with open(os.path.join(out, "p12-password"), "w") as f:
         f.write(password)
 
-    bundle_id = os.environ["APPLE_BUNDLE_ID"]
-    bundles = call("GET", f"/bundleIds?filter[identifier]={bundle_id}&limit=200")["data"]
-    match = [b for b in bundles if b["attributes"]["identifier"] == bundle_id]
-    if not match:
-        sys.exit(f"Bundle ID {bundle_id} is not registered")
-
-    profile = call("POST", "/profiles", {
-        "data": {
-            "type": "profiles",
-            "attributes": {"name": f"Gunce CI {os.environ.get('GITHUB_RUN_ID', int(time.time()))}", "profileType": "IOS_APP_STORE"},
-            "relationships": {
-                "bundleId": {"data": {"type": "bundleIds", "id": match[0]["id"]}},
-                "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]},
+    # The app and its widget extension each need their own App Store profile.
+    app_id = os.environ["APPLE_BUNDLE_ID"]
+    state["profiles"] = {}
+    for bundle_id in (app_id, f"{app_id}.widgets"):
+        profile = call("POST", "/profiles", {
+            "data": {
+                "type": "profiles",
+                "attributes": {
+                    "name": f"Gunce CI {os.environ.get('GITHUB_RUN_ID', int(time.time()))} {bundle_id.rsplit('.', 1)[-1]}",
+                    "profileType": "IOS_APP_STORE",
+                },
+                "relationships": {
+                    "bundleId": {"data": {"type": "bundleIds", "id": bundle_resource(bundle_id)}},
+                    "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]},
+                },
             },
+        })["data"]
+        uuid = profile["attributes"]["uuid"]
+        state["profiles"][bundle_id] = {"id": profile["id"], "uuid": uuid}
+        save_state(out, state)
+        with open(os.path.join(out, f"{uuid}.mobileprovision"), "wb") as f:
+            f.write(base64.b64decode(profile["attributes"]["profileContent"]))
+    print(f"Created a short-lived distribution certificate and {len(state['profiles'])} App Store profiles.")
+
+
+def bundle_resource(identifier: str) -> str:
+    """The App Store Connect id of a bundle ID, registering it when it is new."""
+    bundles = call("GET", f"/bundleIds?filter[identifier]={identifier}&limit=200")["data"]
+    match = [b for b in bundles if b["attributes"]["identifier"] == identifier]
+    if match:
+        return match[0]["id"]
+    created = call("POST", "/bundleIds", {
+        "data": {
+            "type": "bundleIds",
+            "attributes": {"identifier": identifier, "name": f"Gunce {identifier.rsplit('.', 1)[-1]}", "platform": "IOS"},
         },
     })["data"]
-    state["profile_id"] = profile["id"]
-    state["profile_uuid"] = profile["attributes"]["uuid"]
-    save_state(out, state)
-    with open(os.path.join(out, "dist.mobileprovision"), "wb") as f:
-        f.write(base64.b64decode(profile["attributes"]["profileContent"]))
-    print("Created a short-lived distribution certificate and App Store profile.")
+    print(f"Registered bundle ID {identifier}.")
+    return created["id"]
 
 
 def revoke(out: str) -> None:
@@ -134,8 +152,8 @@ def revoke(out: str) -> None:
         return
     with open(path) as f:
         state = json.load(f)
-    if "profile_id" in state:
-        call("DELETE", f"/profiles/{state['profile_id']}")
+    for profile in state.get("profiles", {}).values():
+        call("DELETE", f"/profiles/{profile['id']}")
     if "certificate_id" in state:
         call("DELETE", f"/certificates/{state['certificate_id']}")
     print("Revoked the short-lived certificate and profile.")

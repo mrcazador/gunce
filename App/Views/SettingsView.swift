@@ -35,6 +35,11 @@ struct SettingsView: View {
                     Toggle(isOn: calendarBinding) {
                         Label("Apple Takvim ile eşitle", systemImage: "calendar")
                     }
+                    NavigationLink {
+                        ClaudeConnectView()
+                    } label: {
+                        Label("Claude ile bağla", systemImage: "sparkles")
+                    }
                 } header: {
                     Text("Bağlantılar")
                 } footer: {
