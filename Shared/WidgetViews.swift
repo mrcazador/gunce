@@ -10,6 +10,13 @@ struct ActiveTaskWidgetView: View {
     var now: Date = .now
 
     var body: some View {
+        content
+            // Widgets have a fixed size: past this, text would be cut instead of growing.
+            .dynamicTypeSize(...DynamicTypeSize.xLarge)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch family {
         case .systemMedium:
             MediumWidgetView(snapshot: snapshot, now: now)
@@ -270,7 +277,7 @@ private struct ParkedLink: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(ParkReasonStyle.title(item.parkReason))
             }
-            .frame(minHeight: 36)
+            .frame(minHeight: 34)
             .contentShape(Rectangle())
         }
         .accessibilityHint("Devam ettirmek için açar")
@@ -366,19 +373,24 @@ struct LargeWidgetView: View {
     let snapshot: LockScreenSnapshot
     let now: Date
 
+    private var steps: [LockScreenSnapshot.Step] { Array(snapshot.upcomingSteps.prefix(3)) }
+
+    /// Rows that fit under the active task: steps first, parked tasks fill the rest.
+    private static let rowBudget = 4
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if let state = snapshot.state, let id = snapshot.taskID {
                 HStack(alignment: .top, spacing: 12) {
                     ActiveSummary(state: state, parkNote: snapshot.parkNote, now: now)
                     ActiveButtons(taskID: id, firstStep: snapshot.upcomingSteps.first)
                 }
-                .frame(height: 128)
+                .frame(height: 120)
 
-                if !snapshot.upcomingSteps.isEmpty {
+                if !steps.isEmpty {
                     Divider()
                     SectionTitle(text: "Sıradaki adımlar")
-                    ForEach(snapshot.upcomingSteps.prefix(3)) { step in
+                    ForEach(steps) { step in
                         Button(intent: CompleteStepIntent(taskID: id, stepID: step.id)) {
                             HStack(spacing: 8) {
                                 Image(systemName: "circle")
@@ -388,17 +400,17 @@ struct LargeWidgetView: View {
                                 Spacer(minLength: 0)
                             }
                             .font(.subheadline)
-                            .frame(minHeight: 30)
+                            .frame(minHeight: 28)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("\(step.title), tamamla")
                     }
                 }
-                parkedSection(snapshot.parked)
+                parkedSection(Array(snapshot.parked.prefix(max(0, Self.rowBudget - steps.count))))
             } else {
                 IdleHero(snapshot: snapshot, noteLines: 3)
-                    .frame(height: snapshot.parked.isEmpty ? nil : 128)
+                    .frame(height: snapshot.parked.isEmpty ? nil : 120)
                 parkedSection(Array(snapshot.parked.dropFirst()))
             }
             Spacer(minLength: 0)
