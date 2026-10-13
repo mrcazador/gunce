@@ -137,41 +137,28 @@ private struct TaskDetailForm: View {
 
     /// The one prominent action for the task's state, with "Bitti" beside it while open.
     private var primaryActions: some View {
-        HStack(spacing: 12) {
+        ActionRow {
             switch task.status {
             case .inbox, .parked:
                 if task.parentId == nil {
-                    actionButton(task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
+                    ActionButton(title: task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
                         store.requestStart(task)
                     }
                 }
             case .active:
-                actionButton("Park et", symbol: "pause.fill", prominent: true) {
+                ActionButton(title: "Park et", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
                 }
             case .done, .archived:
-                actionButton("Yeniden aç", symbol: "arrow.counterclockwise", prominent: true) {
+                ActionButton(title: "Yeniden aç", symbol: "arrow.counterclockwise", prominent: true) {
                     Task { await store.reopen(task) }
                 }
             }
             if task.status.isOpen {
-                actionButton("Bitti", symbol: "checkmark", prominent: task.parentId != nil) {
+                ActionButton(title: "Bitti", symbol: "checkmark", prominent: task.parentId != nil) {
                     Task { await store.complete(task) }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func actionButton(_ title: String, symbol: String, prominent: Bool, action: @escaping () -> Void) -> some View {
-        let button = Button(action: action) {
-            Label(title, systemImage: symbol)
-                .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        if prominent {
-            button.buttonStyle(.borderedProminent)
-        } else {
-            button.buttonStyle(.bordered)
         }
     }
 

@@ -160,3 +160,46 @@ extension View {
         modifier(TaskSwipeActions(task: task))
     }
 }
+
+/// A full-width action button. The prominent one carries the screen's main action.
+struct ActionButton: View {
+    let title: String
+    let symbol: String
+    var prominent = false
+    let action: () -> Void
+
+    var body: some View {
+        if prominent {
+            Button(action: action) {
+                label
+                    // The accent is near-black in light and near-white in dark, so the label
+                    // takes the background color to stay readable in both.
+                    .foregroundStyle(.background)
+            }
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button(action: action) { label }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var label: some View {
+        Label(title, systemImage: symbol)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, minHeight: 44)
+    }
+}
+
+/// Lays action buttons side by side, or stacked at accessibility text sizes.
+struct ActionRow<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(spacing: 10) { content() }
+        } else {
+            HStack(spacing: 12) { content() }
+        }
+    }
+}

@@ -94,22 +94,13 @@ private struct ActiveTaskCard: View {
                 ParkNoteText(note: note)
             }
 
-            HStack(spacing: 12) {
-                Button {
+            ActionRow {
+                ActionButton(title: "Park et", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
-                } label: {
-                    Label("Park et", systemImage: "pause.fill")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.borderedProminent)
-
-                Button {
+                ActionButton(title: "Bitti", symbol: "checkmark") {
                     Task { await store.complete(task) }
-                } label: {
-                    Label("Bitti", systemImage: "checkmark")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.bordered)
             }
         }
         .padding(.vertical, 8)
@@ -118,21 +109,32 @@ private struct ActiveTaskCard: View {
 
 private struct ParkedRow: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.dynamicTypeSize) private var typeSize
     let task: TaskItem
+
+    private var resumeButton: some View {
+        Button("Devam et") {
+            store.requestStart(task)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .frame(minHeight: 44)
+        .accessibilityHint("Bu görevi aktif yapar")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
+            if typeSize.isAccessibilitySize {
                 Text(task.title)
                     .font(.headline)
-                Spacer(minLength: 0)
-                Button("Devam et") {
-                    store.requestStart(task)
+                resumeButton
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(task.title)
+                        .font(.headline)
+                    Spacer(minLength: 0)
+                    resumeButton
                 }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .frame(minHeight: 44)
-                .accessibilityHint("Bu görevi aktif yapar")
             }
             if let note = task.parkNote, !note.isEmpty {
                 ParkNoteText(note: note)
@@ -142,6 +144,7 @@ private struct ParkedRow: View {
                 meta(showReason: true)
                 meta(showReason: false)
                 VStack(alignment: .leading, spacing: 2) { metaItems(showReason: true) }
+                    .labelStyle(.titleAndIcon)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -169,6 +172,7 @@ private struct ParkedRow: View {
 
     private func meta(showReason: Bool) -> some View {
         HStack(spacing: 10) { metaItems(showReason: showReason) }
+            .labelStyle(.titleAndIcon)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
     }
