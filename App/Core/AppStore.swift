@@ -45,6 +45,8 @@ final class AppStore {
     let isDemo: Bool
 
     private let api: APIClient?
+    /// The live store, for Live Activity intents that run while the app is open.
+    static weak var current: AppStore?
     @ObservationIgnored private var syncCursor: String? = nil
 
     init() {
@@ -68,6 +70,7 @@ final class AppStore {
         isSignedIn = token != nil
         if token != nil { loadSnapshot() }
         CalendarSync.shared.onExternalChange = { [weak self] in self?.tasksChanged() }
+        Self.current = self
     }
 
     // MARK: - Queries
@@ -198,6 +201,7 @@ final class AppStore {
         events = [:]
         syncCursor = nil
         try? FileManager.default.removeItem(at: Self.snapshotURL)
+        Task { await LockScreen.update(.empty) }
     }
 
     // MARK: - Sync
@@ -316,7 +320,7 @@ final class AppStore {
         }
     }
 
-    func complete(_ task: TaskItem) async {
+    func complete(_ task: TaskItem, source: String = "app") async {
         completions += 1
         await optimistic {
             for id in [task.id] + subtasks(of: task.id).map(\.id) {
@@ -327,7 +331,7 @@ final class AppStore {
                 }
             }
         } send: { api in
-            try await self.sendTask("POST", "v1/tasks/\(task.id)/complete", body: ["source": "app"], api: api)
+            try await self.sendTask("POST", "v1/tasks/\(task.id)/complete", body: ["source": source], api: api)
         }
     }
 
@@ -428,12 +432,39 @@ final class AppStore {
 
     private func runSideEffects() async {
         let all = Array(tasks.values)
+        await updateLockScreen()
         await Reminders.reschedule(reminderItems(all))
         if calendarSyncEnabled, CalendarSync.shared.isAuthorized {
             for (task, change) in CalendarSync.shared.sync(all) {
                 await edit(task, change)
             }
         }
+    }
+
+    /// Writes the active task to the Live Activity and the widget.
+    func updateLockScreen() async {
+        guard !isDemo, isSignedIn else { return }
+        await LockScreen.update(lockScreenSnapshot())
+    }
+
+    private func lockScreenSnapshot() -> LockScreenSnapshot {
+        let parked = parkedTasks.count
+        guard let task = activeTask else {
+            return LockScreenSnapshot(taskID: nil, state: nil, parkedCount: parked)
+        }
+        let taskArea = self.area(task.areaId)
+        let steps = progress(of: task.id)
+        let state = ActiveTaskAttributes.ContentState(
+            title: task.title,
+            areaName: taskArea?.name,
+            areaSymbol: taskArea?.symbol,
+            areaColor: taskArea?.color,
+            startedAt: task.startedAt ?? task.updatedAt,
+            nextStep: nextStep(of: task.id)?.title ?? task.nextStep,
+            stepsDone: steps.done,
+            stepsTotal: steps.total
+        )
+        return LockScreenSnapshot(taskID: task.id, state: state, parkedCount: parked)
     }
 
     private func reminderItems(_ all: [TaskItem]) -> [Reminders.Item] {

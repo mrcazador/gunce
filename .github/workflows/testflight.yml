@@ -7,6 +7,7 @@ on:
     paths:
       - "App/**"
       - "Widgets/**"
+      - "Shared/**"
       - "UITests/**"
       - "project.yml"
       - "ci/**"
@@ -134,19 +135,26 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
 
-          uuid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["profile_uuid"])' "$RUNNER_TEMP/signing/state.json")"
           for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
             mkdir -p "$dir"
-            cp "$RUNNER_TEMP/signing/dist.mobileprovision" "$dir/$uuid.mobileprovision"
+            cp "$RUNNER_TEMP"/signing/*.mobileprovision "$dir/"
           done
-          echo "PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
 
       - name: Export signed IPA
         env:
           APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
         run: |
-          sed -e "s/__TEAM_ID__/${TEAM_ID}/" -e "s/__BUNDLE_ID__/${APPLE_BUNDLE_ID}/" -e "s/__PROFILE_UUID__/${PROFILE_UUID}/" \
-            ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          sed -e "s/__TEAM_ID__/${TEAM_ID}/" ci/ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          python3 - "$RUNNER_TEMP/ExportOptions.plist" "$RUNNER_TEMP/signing/state.json" <<'PY'
+          import json, plistlib, sys
+          with open(sys.argv[1], "rb") as f:
+              options = plistlib.load(f)
+          with open(sys.argv[2]) as f:
+              profiles = json.load(f)["profiles"]
+          options["provisioningProfiles"] = {bundle: p["uuid"] for bundle, p in profiles.items()}
+          with open(sys.argv[1], "wb") as f:
+              plistlib.dump(options, f)
+          PY
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Gunce.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \

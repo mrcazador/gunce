@@ -29,6 +29,9 @@ targets:
           - "Config/**"
           - "Info.plist"
           - "Gunce.entitlements"
+      - path: Shared
+    dependencies:
+      - target: PickUpWidgets
     settings:
       base:
         PRODUCT_NAME: Gunce
@@ -46,6 +49,11 @@ targets:
       path: App/Gunce.entitlements
       properties:
         com.apple.developer.applesignin: [Default]
+        # The app's own group stays first so the session token keeps its place;
+        # `.shared` holds only the widget snapshot.
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(GUNCE_BUNDLE_ID)
+          - $(AppIdentifierPrefix)$(GUNCE_BUNDLE_ID).shared
     info:
       path: App/Info.plist
       properties:
@@ -54,6 +62,11 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDevelopmentRegion: tr
         GunceAPIHost: $(GUNCE_API_HOST)
+        PickUpKeychainGroup: $(AppIdentifierPrefix)$(GUNCE_BUNDLE_ID).shared
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: $(GUNCE_BUNDLE_ID)
+            CFBundleURLSchemes: [pickup]
         ITSAppUsesNonExemptEncryption: false
         NSCalendarsFullAccessUsageDescription: Tarihli görevlerini PickUp takvimine yazmak ve takvimindeki etkinlikleri Bugün ekranında göstermek için.
         LSRequiresIPhoneOS: true
@@ -62,6 +75,38 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+
+  PickUpWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+        excludes:
+          - "Info.plist"
+          - "PickUpWidgets.entitlements"
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: PickUpWidgets
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        PRODUCT_BUNDLE_IDENTIFIER: $(GUNCE_BUNDLE_ID).widgets
+        SKIP_INSTALL: YES
+    entitlements:
+      path: Widgets/PickUpWidgets.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(GUNCE_BUNDLE_ID).shared
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: PickUp
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: tr
+        PickUpKeychainGroup: $(AppIdentifierPrefix)$(GUNCE_BUNDLE_ID).shared
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
   GunceUITests:
     type: bundle.ui-testing
