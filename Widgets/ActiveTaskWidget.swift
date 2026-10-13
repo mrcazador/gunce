@@ -15,9 +15,11 @@ struct SnapshotProvider: TimelineProvider {
         completion(SnapshotEntry(date: .now, snapshot: context.isPreview ? .preview : SharedSnapshot.load()))
     }
 
-    /// The app reloads the timeline after every task change, so one entry is enough.
+    /// The app reloads the timeline after every task change; otherwise it refreshes at midnight.
     func getTimeline(in context: Context, completion: @escaping (Timeline<SnapshotEntry>) -> Void) {
-        completion(Timeline(entries: [SnapshotEntry(date: .now, snapshot: SharedSnapshot.load())], policy: .never))
+        // "Dün" and dates change at midnight, so refresh then as well.
+        let entry = SnapshotEntry(date: .now, snapshot: SharedSnapshot.load())
+        completion(Timeline(entries: [entry], policy: .after(StartTime.nextChange())))
     }
 }
 
@@ -30,7 +32,7 @@ struct ActiveTaskWidget: Widget {
                 .widgetURL(PickUpLink.now)
         }
         .configurationDisplayName("Şimdi")
-        .description("Üzerinde çalıştığın görev ve geçen süre.")
+        .description("Üzerinde çalıştığın görev.")
         .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryInline, .systemSmall])
     }
 }
@@ -59,21 +61,21 @@ struct ActiveTaskWidgetView: View {
                 VStack(spacing: 0) {
                     Image(systemName: symbol)
                         .font(.caption)
-                    Text(state.startedAt, style: .timer)
+                    Text(StartTime.clock(state.startedAt))
                         .font(.caption2.monospacedDigit())
-                        .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.6)
                 }
                 .padding(4)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Şimdi: \(state.title)")
+            .accessibilityLabel("Şimdi: \(state.title). \(StartTime.spoken(state.startedAt))")
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
                     Image(systemName: symbol)
-                    Text(state.startedAt, style: .timer)
-                        .monospacedDigit()
+                    Text(StartTime.since(state.startedAt))
+                        .lineLimit(1)
+                        .accessibilityLabel(StartTime.spoken(state.startedAt))
                 }
                 .font(.caption)
                 Text(state.title)
@@ -103,9 +105,11 @@ struct ActiveTaskWidgetView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
-                Text(state.startedAt, style: .timer)
-                    .font(.caption.monospacedDigit())
+                Text(StartTime.since(state.startedAt))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityLabel(StartTime.spoken(state.startedAt))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

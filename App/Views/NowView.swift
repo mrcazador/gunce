@@ -74,10 +74,10 @@ private struct ActiveTaskCard: View {
                 }
                 Spacer()
                 if let started = task.startedAt {
-                    Text(started, style: .timer)
-                        .font(.subheadline.monospacedDigit())
+                    Text(StartTime.sentence(started))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("Süre")
+                        .accessibilityLabel(StartTime.spoken(started))
                 }
             }
 
@@ -89,6 +89,17 @@ private struct ActiveTaskCard: View {
             }
 
             let progress = store.progress(of: task.id)
+            let note = task.parkNote ?? ""
+            // Resumed from park: where you left off comes first.
+            if !note.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Kaldığın yer")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    ParkNoteText(note: note)
+                }
+            }
             if let step = store.nextStep(of: task.id) {
                 NextStepRow(step: step, done: progress.done, total: progress.total)
             } else if let next = task.nextStep, !next.isEmpty {
@@ -102,8 +113,8 @@ private struct ActiveTaskCard: View {
                 Label("Tüm adımlar bitti", systemImage: "checkmark.seal")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if let note = task.parkNote, !note.isEmpty {
-                ParkNoteText(note: note)
+            } else if note.isEmpty {
+                FirstStepField(task: task)
             }
 
             ActionRow {
@@ -116,6 +127,36 @@ private struct ActiveTaskCard: View {
             }
         }
         .padding(.vertical, 8)
+    }
+}
+
+/// An empty card asks for the first step; it is added as the task's first subtask.
+private struct FirstStepField: View {
+    @Environment(AppStore.self) private var store
+    let task: TaskItem
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "plus.circle")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("İlk adımı yaz", text: $text)
+                .focused($focused)
+                .submitLabel(.done)
+                .onSubmit(add)
+                .accessibilityLabel("İlk adım")
+                .accessibilityHint("Yazdığın metin görevin ilk adımı olur")
+        }
+        .frame(minHeight: 44)
+    }
+
+    private func add() {
+        let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        text = ""
+        Task { await store.capture(title, areaId: task.areaId, parentId: task.id) }
     }
 }
 
