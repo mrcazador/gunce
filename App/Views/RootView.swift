@@ -54,6 +54,11 @@ struct MainTabs: View {
         } message: {
             Text(store.errorMessage ?? "")
         }
+        // Haptics for the actions that change what you are working on.
+        .sensoryFeedback(.success, trigger: store.completions)
+        .sensoryFeedback(.impact(weight: .medium), trigger: store.parks)
+        .sensoryFeedback(.impact(weight: .light), trigger: store.starts)
+        .sensoryFeedback(.selection, trigger: store.captures)
         .task { await store.refresh() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
