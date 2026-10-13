@@ -7,12 +7,34 @@ final class ScreenshotTests: XCTestCase {
         continueAfterFailure = true
     }
 
-    func testLight() { walk(prefix: "light", extra: []) }
+    private static let largeText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"]
 
-    func testDark() { walk(prefix: "dark", extra: ["-demo-dark"]) }
+    func testLight() {
+        walk(prefix: "light", extra: [])
+        widgets(prefix: "light", extra: [])
+    }
+
+    func testDark() {
+        walk(prefix: "dark", extra: ["-demo-dark"])
+        widgets(prefix: "dark", extra: ["-demo-dark"])
+    }
 
     func testLargeText() {
-        walk(prefix: "xl", extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        walk(prefix: "xl", extra: Self.largeText)
+        widgets(prefix: "xl", extra: Self.largeText)
+    }
+
+    /// Medium and large Home Screen widgets, rendered by the debug widget gallery.
+    private func widgets(prefix: String, extra: [String]) {
+        for (name, flag) in [("13-widgets-aktif", "-demo-widgets"), ("14-widgets-park", "-demo-widgets-idle")] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-demo", flag] + extra
+            app.launch()
+            snap("\(prefix)-\(name)")
+            app.swipeUp()
+            snap("\(prefix)-\(name)-2")
+            app.terminate()
+        }
     }
 
     func testSignIn() {

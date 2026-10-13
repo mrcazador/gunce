@@ -447,10 +447,23 @@ final class AppStore {
         await LockScreen.update(lockScreenSnapshot())
     }
 
-    private func lockScreenSnapshot() -> LockScreenSnapshot {
-        let parked = parkedTasks.count
+    func lockScreenSnapshot() -> LockScreenSnapshot {
+        // parkedTasks is newest first.
+        let parkedList = parkedTasks
+            .prefix(3)
+            .map { item -> LockScreenSnapshot.Parked in
+                let itemArea = self.area(item.areaId)
+                return .init(
+                    id: item.id,
+                    title: item.title,
+                    areaSymbol: itemArea?.symbol,
+                    areaColor: itemArea?.color,
+                    parkNote: item.parkNote,
+                    parkReason: item.parkReason?.rawValue
+                )
+            }
         guard let task = activeTask else {
-            return LockScreenSnapshot(taskID: nil, state: nil, parkedCount: parked)
+            return LockScreenSnapshot(taskID: nil, state: nil, parkedCount: parkedTasks.count, parked: parkedList)
         }
         let taskArea = self.area(task.areaId)
         let steps = progress(of: task.id)
@@ -464,7 +477,19 @@ final class AppStore {
             stepsDone: steps.done,
             stepsTotal: steps.total
         )
-        return LockScreenSnapshot(taskID: task.id, state: state, parkedCount: parked)
+        let upcoming = subtasks(of: task.id)
+            .filter { $0.status.isOpen }
+            .prefix(3)
+            .map { LockScreenSnapshot.Step(id: $0.id, title: $0.title) }
+        let note = task.parkNote.flatMap { $0.isEmpty ? nil : $0 }
+        return LockScreenSnapshot(
+            taskID: task.id,
+            state: state,
+            parkedCount: parkedTasks.count,
+            upcomingSteps: Array(upcoming),
+            parkNote: note,
+            parked: parkedList
+        )
     }
 
     private func reminderItems(_ all: [TaskItem]) -> [Reminders.Item] {
@@ -701,7 +726,8 @@ final class AppStore {
         let today = Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: now)
         let list = [
             task("t1", "Çeyrek sunumunu hazırla", area: "a-is", status: .active,
-                 next: "Gelir grafiğini güncelle", started: ago(42), due: today),
+                 next: "Gelir grafiğini güncelle", note: "Grafikler hazır, metinler kaldı.", reason: .later,
+                 started: ago(42), due: today),
             task("t2", "Kira sözleşmesini yenile", area: "a-hayat", status: .parked,
                  note: "Ev sahibinden yeni fiyatı bekliyorum, cuma tekrar ara.", reason: .waiting, parked: ago(30)),
             task("t3", "Fon dağılımını gözden geçir", area: "a-yatirim", status: .parked,

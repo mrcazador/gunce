@@ -69,8 +69,23 @@ struct MainTabs: View {
         .onOpenURL { url in
             guard url.scheme == "pickup" else { return }
             selection = .now
-            if url.host == "park", let task = store.activeTask, store.parkRequest == nil {
-                store.requestPark(task)
+            switch url.host {
+            case "park":
+                if let task = store.activeTask, store.parkRequest == nil {
+                    store.requestPark(task)
+                }
+            case "resume":
+                // pickup://resume/<id>: the usual start flow, which asks "nerede kaldın?" first.
+                if let id = url.pathComponents.dropFirst().first, let task = store.tasks[id],
+                   task.status.isOpen, task.parentId == nil, store.parkRequest == nil {
+                    store.requestStart(task)
+                }
+            case "capture":
+                if store.captureRequest == nil {
+                    store.captureRequest = CaptureRequest()
+                }
+            default:
+                break
             }
         }
         .task { await store.refresh() }

@@ -23,152 +23,74 @@ struct SnapshotProvider: TimelineProvider {
     }
 }
 
-/// Lock Screen and Home Screen widget: the task you are on, and for how long.
+/// Lock Screen and Home Screen widget: the task you are on, its next steps and what is parked.
 struct ActiveTaskWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "ActiveTask", provider: SnapshotProvider()) { entry in
-            ActiveTaskWidgetView(snapshot: entry.snapshot)
+            ActiveTaskEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
                 .widgetURL(PickUpLink.now)
         }
         .configurationDisplayName("Şimdi")
         .description("Üzerinde çalıştığın görev.")
-        .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryInline, .systemSmall])
+        .supportedFamilies([
+            .accessoryRectangular, .accessoryCircular, .accessoryInline,
+            .systemSmall, .systemMedium, .systemLarge,
+        ])
     }
 }
 
-struct ActiveTaskWidgetView: View {
+private struct ActiveTaskEntryView: View {
     @Environment(\.widgetFamily) private var family
-    let snapshot: LockScreenSnapshot
+    let entry: SnapshotEntry
 
     var body: some View {
-        if let state = snapshot.state {
-            active(state)
-        } else {
-            idle
-        }
-    }
-
-    @ViewBuilder
-    private func active(_ state: ActiveTaskAttributes.ContentState) -> some View {
-        let symbol = state.areaSymbol ?? "bookmark"
-        switch family {
-        case .accessoryInline:
-            Label(state.title, systemImage: symbol)
-        case .accessoryCircular:
-            ZStack {
-                AccessoryWidgetBackground()
-                VStack(spacing: 0) {
-                    Image(systemName: symbol)
-                        .font(.caption)
-                    Text(StartTime.clock(state.startedAt))
-                        .font(.caption2.monospacedDigit())
-                        .minimumScaleFactor(0.6)
-                }
-                .padding(4)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Şimdi: \(state.title). \(StartTime.spoken(state.startedAt))")
-        case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Image(systemName: symbol)
-                    Text(StartTime.since(state.startedAt))
-                        .lineLimit(1)
-                        .accessibilityLabel(StartTime.spoken(state.startedAt))
-                }
-                .font(.caption)
-                Text(state.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                if let next = state.nextStep {
-                    Text("Sıradaki: \(next)")
-                        .font(.caption)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-        default:
-            VStack(alignment: .leading, spacing: 6) {
-                Label(state.areaName ?? "Şimdi", systemImage: symbol)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AreaPalette.color(state.areaColor))
-                    .lineLimit(1)
-                Text(state.title)
-                    .font(.headline)
-                    .lineLimit(3)
-                Spacer(minLength: 0)
-                if let next = state.nextStep {
-                    Text(next)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Text(StartTime.since(state.startedAt))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .accessibilityLabel(StartTime.spoken(state.startedAt))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private var idle: some View {
-        let parked = snapshot.parkedCount > 0 ? "\(snapshot.parkedCount) park edilmiş" : "Aklına geleni yaz"
-        switch family {
-        case .accessoryInline:
-            Label("Aktif görev yok", systemImage: "bookmark")
-        case .accessoryCircular:
-            ZStack {
-                AccessoryWidgetBackground()
-                Image(systemName: "bookmark")
-                    .font(.title3)
-            }
-            .accessibilityLabel("Aktif görev yok")
-        case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 1) {
-                Label("PickUp", systemImage: "bookmark")
-                    .font(.caption)
-                Text("Aktif görev yok")
-                    .font(.headline)
-                Text(parked)
-                    .font(.caption)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-        default:
-            VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: "bookmark")
-                    .font(.title3)
-                Spacer(minLength: 0)
-                Text("Aktif görev yok")
-                    .font(.headline)
-                Text(parked)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        ActiveTaskWidgetView(family: family, snapshot: entry.snapshot, now: entry.date)
     }
 }
 
-extension LockScreenSnapshot {
-    /// Invented example for the widget gallery.
-    static let preview = LockScreenSnapshot(
-        taskID: "preview",
-        state: .init(
-            title: "Sunum taslağını bitir",
-            areaName: "İş",
-            areaSymbol: "briefcase",
-            areaColor: "indigo",
-            startedAt: .now.addingTimeInterval(-25 * 60),
-            nextStep: "Grafikleri güncelle",
-            stepsDone: 1,
-            stepsTotal: 3
-        ),
-        parkedCount: 2
-    )
+// MARK: - Previews (invented data)
+
+#Preview("Kilit ekranı", as: .accessoryRectangular) {
+    ActiveTaskWidget()
+} timeline: {
+    SnapshotEntry(date: .now, snapshot: .preview)
+    SnapshotEntry(date: .now, snapshot: .previewIdle)
+}
+
+#Preview("Yuvarlak", as: .accessoryCircular) {
+    ActiveTaskWidget()
+} timeline: {
+    SnapshotEntry(date: .now, snapshot: .preview)
+    SnapshotEntry(date: .now, snapshot: .previewIdle)
+}
+
+#Preview("Satır", as: .accessoryInline) {
+    ActiveTaskWidget()
+} timeline: {
+    SnapshotEntry(date: .now, snapshot: .preview)
+    SnapshotEntry(date: .now, snapshot: .previewIdle)
+}
+
+#Preview("Küçük", as: .systemSmall) {
+    ActiveTaskWidget()
+} timeline: {
+    SnapshotEntry(date: .now, snapshot: .preview)
+    SnapshotEntry(date: .now, snapshot: .previewIdle)
+}
+
+#Preview("Orta", as: .systemMedium) {
+    ActiveTaskWidget()
+} timeline: {
+    SnapshotEntry(date: .now, snapshot: .preview)
+    SnapshotEntry(date: .now, snapshot: .previewIdle)
+    SnapshotEntry(date: .now, snapshot: .empty)
+}
+
+#Preview("Büyük", as: .systemLarge) {
+    ActiveTaskWidget()
+} timeline: {
+    SnapshotEntry(date: .now, snapshot: .preview)
+    SnapshotEntry(date: .now, snapshot: .previewIdle)
+    SnapshotEntry(date: .now, snapshot: .empty)
 }

@@ -45,14 +45,47 @@ enum IntentBridge {
             return
         }
         // The app was launched in the background just for this intent: call the API directly.
-        guard let api = APIClient.fromBundle(), let token = Keychain.readToken() else { return }
-        api.token = token
-        try? await api.send("POST", "v1/tasks/\(taskID)/complete", body: ["source": "widget"])
+        // On a network error the snapshot stays as it is; the next refresh in the app fixes it.
+        guard await sendComplete(taskID) else { return }
         var snapshot = SharedSnapshot.load()
         if snapshot.taskID == taskID {
             snapshot.taskID = nil
             snapshot.state = nil
+            snapshot.upcomingSteps = []
+            snapshot.parkNote = nil
         }
         await LockScreen.update(snapshot)
+    }
+
+    @MainActor
+    static func completeStep(taskID: String, stepID: String) async {
+        if let store = AppStore.current, store.isSignedIn, let step = store.tasks[stepID] {
+            await store.complete(step, source: "widget")
+            await store.updateLockScreen()
+            return
+        }
+        guard await sendComplete(stepID) else { return }
+        var snapshot = SharedSnapshot.load()
+        if snapshot.taskID == taskID {
+            snapshot.upcomingSteps.removeAll { $0.id == stepID }
+            if var state = snapshot.state {
+                state.stepsDone = min(state.stepsDone + 1, state.stepsTotal)
+                state.nextStep = snapshot.upcomingSteps.first?.title
+                snapshot.state = state
+            }
+        }
+        await LockScreen.update(snapshot)
+    }
+
+    /// Completes a task or step with the stored session. Returns whether the server accepted it.
+    private static func sendComplete(_ id: String) async -> Bool {
+        guard let api = APIClient.fromBundle(), let token = Keychain.readToken() else { return false }
+        api.token = token
+        do {
+            try await api.send("POST", "v1/tasks/\(id)/complete", body: ["source": "widget"])
+            return true
+        } catch {
+            return false
+        }
     }
 }
