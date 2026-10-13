@@ -7,10 +7,16 @@ on:
     paths:
       - "App/**"
       - "Widgets/**"
+      - "UITests/**"
       - "project.yml"
       - "ci/**"
       - ".github/workflows/testflight.yml"
   workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload the build to TestFlight (off = screenshots only)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -21,6 +27,7 @@ concurrency:
 
 jobs:
   build-and-upload:
+    if: github.event_name == 'push' || inputs.testflight
     runs-on: macos-latest
     timeout-minutes: 45
     env:
@@ -172,3 +179,67 @@ jobs:
       - name: Remove key material
         if: always()
         run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/signing" App/Config/Secrets.xcconfig
+
+  # Runs the UI tests on a simulator with invented demo data and keeps a screenshot of every
+  # screen (light, dark, large text) as a build artifact, so layout can be reviewed off-device.
+  screenshots:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Run screenshot tests
+        run: |
+          udid="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = [d for rt, ds in json.load(sys.stdin)["devices"].items() if "iOS" in rt for d in ds]
+          for want in ("iPhone 17 Pro", "iPhone 17", "iPhone"):
+              match = [d for d in devices if d["name"].startswith(want)]
+              if match:
+                  print(match[-1]["udid"]); break
+          ')"
+          test -n "$udid" || { echo "::error::No iPhone simulator found"; exit 1; }
+          set -o pipefail
+          xcodebuild test \
+            -project Gunce.xcodeproj \
+            -scheme Gunce \
+            -destination "id=$udid" \
+            -resultBundlePath "$RUNNER_TEMP/ui.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/test.log" | grep -E "error:|Test Case .* (passed|failed)|TEST (SUCCEEDED|FAILED)" || true
+          test -d "$RUNNER_TEMP/ui.xcresult" || { tail -200 "$RUNNER_TEMP/test.log"; exit 1; }
+
+      - name: Export screenshots
+        run: |
+          xcrun xcresulttool export attachments --path "$RUNNER_TEMP/ui.xcresult" --output-path "$RUNNER_TEMP/raw"
+          mkdir -p "$RUNNER_TEMP/shots"
+          python3 - "$RUNNER_TEMP/raw" "$RUNNER_TEMP/shots" <<'PY'
+          import json, os, shutil, sys
+          raw, out = sys.argv[1], sys.argv[2]
+          for test in json.load(open(os.path.join(raw, "manifest.json"))):
+              for a in test.get("attachments", []):
+                  name = a.get("suggestedHumanReadableName") or a["exportedFileName"]
+                  name = name.split("_0_")[0]
+                  if not name.endswith(".png"):
+                      name += ".png"
+                  shutil.copy(os.path.join(raw, a["exportedFileName"]), os.path.join(out, name))
+          print("\n".join(sorted(os.listdir(out))))
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/shots
+          retention-days: 7
+

@@ -1,6 +1,6 @@
-# Günce — guidance for Claude
+# PickUp — guidance for Claude
 
-Günce is Said's personal iPhone app for work that keeps getting interrupted. Its core idea:
+PickUp (code name Günce; the repo, targets and Worker keep that name) is Said's personal iPhone app for work that keeps getting interrupted. Its core idea:
 **never lose the place you left off.** Tasks are captured in seconds, *parked* with a one-line
 "where I left off" note when you switch away, and *resumed* from that note later.
 
@@ -42,7 +42,7 @@ and fix it.
   parked (with note and reason), resumed, done.
 - Park reasons: `waiting` (Yanıt bekliyorum), `need_info` (Bilgi lazım), `later` (Sonra devam).
 - Reminders are app notifications (Said no longer uses Apple Reminders). Calendar sync is both
-  ways: timed tasks go to a dedicated "Günce" calendar, and calendar events appear in "Bugün".
+  ways: timed tasks go to a dedicated "PickUp" calendar, and calendar events appear in "Bugün".
 - Tasks Claude creates have `created_via = 'claude'`.
 
 ## Design rules
