@@ -647,6 +647,7 @@ final class AppStore {
             task("s2", "Rakamları finansla doğrula", area: "a-is", status: .inbox, parent: "t1"),
         ]
         tasks = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
+        tasks["s2"]?.sort = 1
         let history: [(String, String, String?, ParkReason?, Int?, Date)] = [
             ("e1", "created", nil, nil, nil, made),
             ("e2", "started", nil, nil, nil, ago(60 * 26)),

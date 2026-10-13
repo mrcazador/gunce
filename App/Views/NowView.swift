@@ -235,6 +235,7 @@ private struct NextStepRow: View {
                     Text(step.title)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
                 .frame(minHeight: 44)
