@@ -47,6 +47,7 @@ final class ScreenshotTests: XCTestCase {
             snap("\(prefix)-05-ayarlar")
             if tap(app.staticTexts["Profilim"].firstMatch) {
                 snap("\(prefix)-06-profil")
+                tap(app.navigationBars.buttons.firstMatch)
             }
             tap(app.buttons["Bitti"].firstMatch)
         }

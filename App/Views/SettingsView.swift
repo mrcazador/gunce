@@ -167,7 +167,7 @@ struct ProfileView: View {
             Section {
                 VStack(spacing: 12) {
                     Avatar(name: name, size: 80)
-                    TextField("Adın", text: $name)
+                    TextField("Adını ekle", text: $name)
                         .font(.title2.weight(.semibold))
                         .multilineTextAlignment(.center)
                         .textContentType(.name)
@@ -182,9 +182,7 @@ struct ProfileView: View {
             }
 
             Section("Hesap") {
-                LabeledContent("Giriş yöntemi") {
-                    Label("Apple", systemImage: "apple.logo")
-                }
+                LabeledContent("Giriş yöntemi", value: "Apple ile giriş")
                 if let memberSince {
                     LabeledContent("Üyelik", value: memberSince.formatted(date: .long, time: .omitted))
                 }
