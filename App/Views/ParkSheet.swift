@@ -14,14 +14,15 @@ struct ParkSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text(request.task.title)
-                        .font(.headline)
                     TextField("Bir cümleyle: nerede kaldın?", text: $note, axis: .vertical)
                         .font(.parkNote)
                         .lineLimit(2...5)
                         .focused($noteFocused)
                 } header: {
-                    Text("Nerede kaldın?")
+                    Text(request.task.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .textCase(nil)
                 } footer: {
                     if let next = request.next {
                         Text("Sonra “\(next.title)” başlayacak.")
@@ -38,7 +39,7 @@ struct ParkSheet: View {
                     .labelsHidden()
                 }
             }
-            .navigationTitle(request.next == nil ? "Park et" : "Göreve geç")
+            .navigationTitle("Nerede kaldın?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -46,6 +47,7 @@ struct ParkSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(request.next == nil ? "Park et" : "Park et ve geç", action: confirm)
+                        .buttonStyle(.glassProminent)
                 }
             }
             .onAppear { noteFocused = true }

@@ -32,6 +32,12 @@ private struct TaskDetailForm: View {
     var body: some View {
         Form {
             Section {
+                primaryActions
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+
+            Section {
                 TextField("Başlık", text: $draft.title, axis: .vertical)
                     .font(.headline)
                 TextField("Sıradaki adım", text: $draft.nextStep, axis: .vertical)
@@ -129,31 +135,51 @@ private struct TaskDetailForm: View {
         }
     }
 
-    @ViewBuilder
-    private var actions: some View {
-        switch task.status {
-        case .inbox, .parked:
-            if task.parentId == nil {
-                Button(task.status == .parked ? "Devam et" : "Başla", systemImage: "play") {
-                    store.requestStart(task)
+    /// The one prominent action for the task's state, with "Bitti" beside it while open.
+    private var primaryActions: some View {
+        HStack(spacing: 12) {
+            switch task.status {
+            case .inbox, .parked:
+                if task.parentId == nil {
+                    actionButton(task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
+                        store.requestStart(task)
+                    }
+                }
+            case .active:
+                actionButton("Park et", symbol: "pause.fill", prominent: true) {
+                    store.requestPark(task)
+                }
+            case .done, .archived:
+                actionButton("Yeniden aç", symbol: "arrow.counterclockwise", prominent: true) {
+                    Task { await store.reopen(task) }
                 }
             }
-            Button("Bitti", systemImage: "checkmark") {
-                Task { await store.complete(task) }
+            if task.status.isOpen {
+                actionButton("Bitti", symbol: "checkmark", prominent: task.parentId != nil) {
+                    Task { await store.complete(task) }
+                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func actionButton(_ title: String, symbol: String, prominent: Bool, action: @escaping () -> Void) -> some View {
+        let button = Button(action: action) {
+            Label(title, systemImage: symbol)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        if prominent {
+            button.buttonStyle(.borderedProminent)
+        } else {
+            button.buttonStyle(.bordered)
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if task.status == .inbox || task.status == .parked {
             Button("Arşivle", systemImage: "archivebox") {
                 Task { await store.archive(task) }
-            }
-        case .active:
-            Button("Park et", systemImage: "pause") {
-                store.requestPark(task)
-            }
-            Button("Bitti", systemImage: "checkmark") {
-                Task { await store.complete(task) }
-            }
-        case .done, .archived:
-            Button("Yeniden aç", systemImage: "arrow.counterclockwise") {
-                Task { await store.reopen(task) }
             }
         }
         Button("Sil", systemImage: "trash", role: .destructive) {

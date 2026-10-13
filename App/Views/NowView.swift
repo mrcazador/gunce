@@ -121,35 +121,37 @@ private struct ParkedRow: View {
     let task: TaskItem
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            NavigationLink(value: task.id) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(task.title)
-                        .font(.headline)
-                    if let note = task.parkNote, !note.isEmpty {
-                        ParkNoteText(note: note)
-                    }
-                    HStack(spacing: 8) {
-                        if let area = store.area(task.areaId) {
-                            AreaLabel(area: area)
-                        }
-                        if let reason = task.parkReason {
-                            Label(reason.title, systemImage: reason.symbol)
-                        }
-                        if let parked = task.parkedAt {
-                            Text(parked, format: .relative(presentation: .named))
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(task.title)
+                    .font(.headline)
+                Spacer(minLength: 0)
+                Button("Devam et") {
+                    store.requestStart(task)
                 }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .frame(minHeight: 44)
+                .accessibilityHint("Bu görevi aktif yapar")
             }
-            Button("Devam et") {
-                store.requestStart(task)
+            if let note = task.parkNote, !note.isEmpty {
+                ParkNoteText(note: note)
             }
-            .buttonStyle(.bordered)
-            .frame(minHeight: 44)
-            .accessibilityHint("Bu görevi aktif yapar")
+            // Full details when they fit on one line, the essentials when they don't.
+            ViewThatFits(in: .horizontal) {
+                meta(showReason: true)
+                meta(showReason: false)
+                VStack(alignment: .leading, spacing: 2) { metaItems(showReason: true) }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+        // The whole row opens the task; a hidden link keeps the visible button tappable
+        // and avoids a disclosure chevron in the middle of the row.
+        .background {
+            NavigationLink(value: task.id) { EmptyView() }
+                .opacity(0)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button("Devam et", systemImage: "play") {
@@ -163,5 +165,24 @@ private struct ParkedRow: View {
                 Task { await store.complete(task) }
             }
         }
+    }
+
+    private func meta(showReason: Bool) -> some View {
+        HStack(spacing: 10) { metaItems(showReason: showReason) }
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    @ViewBuilder
+    private func metaItems(showReason: Bool) -> some View {
+            if let area = store.area(task.areaId) {
+                AreaLabel(area: area)
+            }
+            if showReason, let reason = task.parkReason {
+                Label(reason.title, systemImage: reason.symbol)
+            }
+            if let parked = task.parkedAt {
+                Text(parked, format: .relative(presentation: .named))
+            }
     }
 }

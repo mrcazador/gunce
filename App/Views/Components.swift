@@ -52,6 +52,8 @@ struct ParkNoteText: View {
 struct TaskRow: View {
     @Environment(AppStore.self) private var store
     let task: TaskItem
+    /// Lists grouped by area already name it in the section header.
+    var showArea = true
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -68,14 +70,15 @@ struct TaskRow: View {
                         .lineLimit(2)
                 }
                 HStack(spacing: 8) {
-                    if let area = store.area(task.areaId) {
+                    if showArea, let area = store.area(task.areaId) {
                         AreaLabel(area: area)
                     }
                     if let due = task.dueAt {
-                        Label(due.formatted(.relative(presentation: .named)), systemImage: "calendar")
+                        Label(dueText(due), systemImage: "calendar")
                             .foregroundStyle(due < .now && task.status.isOpen ? Color.red : Color.secondary)
                     }
                 }
+                .lineLimit(1)
                 .font(.caption)
                 .labelStyle(.titleAndIcon)
             }
@@ -83,6 +86,13 @@ struct TaskRow: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityValue(statusTitle)
+    }
+
+    /// Today shows the time ("17:00"); other days read relative ("yarın", "2 gün önce").
+    private func dueText(_ due: Date) -> String {
+        Calendar.current.isDateInToday(due)
+            ? due.formatted(date: .omitted, time: .shortened)
+            : due.formatted(.relative(presentation: .named))
     }
 
     private var statusSymbol: String {
