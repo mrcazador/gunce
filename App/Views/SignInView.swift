@@ -32,7 +32,7 @@ struct SignInView: View {
 
             SignInWithAppleButton(.signIn) { request in
                 nonce = AppleNonce.random()
-                request.requestedScopes = []
+                request.requestedScopes = [.fullName, .email]
                 request.nonce = AppleNonce.sha256(nonce)
             } onCompletion: { result in
                 handle(result)
@@ -68,6 +68,14 @@ struct SignInView: View {
             else {
                 store.errorMessage = "Apple kimliği alınamadı."
                 return
+            }
+            // Apple shares the name and email only on the first sign-in; keep them on device.
+            if let given = credential.fullName {
+                let full = PersonNameComponentsFormatter().string(from: given)
+                if !full.isEmpty { UserDefaults.standard.set(full, forKey: ProfileKeys.name) }
+            }
+            if let email = credential.email {
+                UserDefaults.standard.set(email, forKey: ProfileKeys.email)
             }
             let rawNonce = nonce
             isWorking = true

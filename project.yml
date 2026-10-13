@@ -55,6 +55,7 @@ targets:
         CFBundleDevelopmentRegion: tr
         GunceAPIHost: $(GUNCE_API_HOST)
         ITSAppUsesNonExemptEncryption: false
+        NSCalendarsFullAccessUsageDescription: Tarihli görevlerini PickUp takvimine yazmak ve takvimindeki etkinlikleri Bugün ekranında göstermek için.
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIApplicationSceneManifest:

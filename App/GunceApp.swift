@@ -1,7 +1,9 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct GunceApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = AppStore()
 
     var body: some Scene {
@@ -9,6 +11,7 @@ struct GunceApp: App {
             RootView()
                 .environment(store)
                 .preferredColorScheme(Self.forcedColorScheme)
+                .onAppear { appDelegate.store = store }
         }
     }
 
@@ -18,5 +21,41 @@ struct GunceApp: App {
         if ProcessInfo.processInfo.arguments.contains("-demo-dark") { return .dark }
         #endif
         return nil
+    }
+}
+
+/// Receives notification taps and actions (Devam et, 1 saat ertele, Bitti).
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    weak var store: AppStore?
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        Reminders.registerCategories()
+        return true
+    }
+
+    /// Show reminders as banners even while the app is open.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound, .list]
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let taskID = response.notification.request.content.userInfo["taskID"] as? String else { return }
+        let action = response.actionIdentifier
+        await handle(action: action, taskID: taskID)
+    }
+
+    @MainActor
+    private func handle(action: String, taskID: String) async {
+        await store?.handleNotification(action: action, taskID: taskID)
     }
 }

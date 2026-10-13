@@ -40,6 +40,9 @@ struct MainTabs: View {
         .tabViewBottomAccessory {
             CaptureBar()
         }
+        .sheet(item: $store.captureRequest) { request in
+            CaptureSheet(request: request)
+        }
         .sheet(item: $store.parkRequest) { request in
             ParkSheet(request: request)
         }
@@ -59,6 +62,9 @@ struct MainTabs: View {
         .sensoryFeedback(.impact(weight: .medium), trigger: store.parks)
         .sensoryFeedback(.impact(weight: .light), trigger: store.starts)
         .sensoryFeedback(.selection, trigger: store.captures)
+        .onChange(of: store.openTaskID) { _, id in
+            if id != nil { selection = .now }
+        }
         .task { await store.refresh() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

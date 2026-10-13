@@ -8,6 +8,7 @@ struct ParkSheet: View {
 
     @State private var note = ""
     @State private var reason: ParkReason = .later
+    @State private var remind: Reminders.Preset = .none
     @FocusState private var noteFocused: Bool
 
     var body: some View {
@@ -38,6 +39,23 @@ struct ParkSheet: View {
                     .pickerStyle(.inline)
                     .labelsHidden()
                 }
+
+                Section {
+                    Picker("Hatırlat", selection: $remind) {
+                        ForEach(Reminders.Preset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                } header: {
+                    Text("Ne zaman hatırlatayım?")
+                } footer: {
+                    if let date = remind.date() {
+                        Text("Bildirim: \(date.formatted(.dateTime.weekday(.wide).hour().minute()))")
+                    }
+                }
             }
             .navigationTitle("Nerede kaldın?")
             .navigationBarTitleDisplayMode(.inline)
@@ -52,19 +70,24 @@ struct ParkSheet: View {
             }
             .onAppear { noteFocused = true }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
     }
 
     private func confirm() {
         let note = note
         let reason = reason
         let request = request
+        let remindAt = remind.date()
         dismiss()
         Task {
+            if remindAt != nil { await Reminders.requestPermission() }
             if let next = request.next {
                 await store.start(next, previousNote: note, previousReason: reason)
+                if let remindAt, let parked = store.tasks[request.task.id] {
+                    await store.edit(parked) { $0.remindAt = remindAt }
+                }
             } else {
-                await store.park(request.task, note: note, reason: reason)
+                await store.park(request.task, note: note, reason: reason, remindAt: remindAt)
             }
         }
     }
