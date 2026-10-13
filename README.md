@@ -1,4 +1,4 @@
-# Günce
+# PickUp
 
 A personal iPhone app for work that keeps getting interrupted: capture in seconds, **park** a
 task with a one-line note on where you left off, and **resume** from that note later.

@@ -39,6 +39,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(GUNCE_BUNDLE_ID)
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    scheme:
+      testTargets:
+        - GunceUITests
     entitlements:
       path: App/Gunce.entitlements
       properties:
@@ -46,7 +49,7 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleDisplayName: Günce
+        CFBundleDisplayName: PickUp
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDevelopmentRegion: tr
@@ -58,3 +61,17 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+
+  GunceUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Gunce
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(GUNCE_BUNDLE_ID).uitests
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO

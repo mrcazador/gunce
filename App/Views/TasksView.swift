@@ -54,7 +54,7 @@ struct TasksView: View {
     private func rows(_ tasks: [TaskItem]) -> some View {
         ForEach(tasks) { task in
             NavigationLink(value: task.id) {
-                TaskRow(task: task)
+                TaskRow(task: task, showArea: false)
             }
             .taskSwipeActions(task)
         }

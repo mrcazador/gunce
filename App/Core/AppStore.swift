@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// A request to park a task, optionally starting another one right after (a switch).
 struct ParkRequest: Identifiable {
@@ -23,11 +24,25 @@ final class AppStore {
     var errorMessage: String? = nil
 
     let isConfigured: Bool
+    /// Debug builds launched with `-demo` run on invented data with no server (UI tests, screenshots).
+    let isDemo: Bool
 
     private let api: APIClient?
     @ObservationIgnored private var syncCursor: String? = nil
 
     init() {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-demo") || args.contains("-demo-signed-out") {
+            api = nil
+            isConfigured = true
+            isDemo = true
+            isSignedIn = args.contains("-demo")
+            if isSignedIn { loadDemoData() }
+            return
+        }
+        #endif
+        isDemo = false
         let api = APIClient.fromBundle()
         self.api = api
         isConfigured = api != nil
@@ -203,14 +218,25 @@ final class AppStore {
     }
 
     // MARK: - Actions
+    //
+    // State changes are optimistic: the screen updates at once (animated), the request goes out
+    // after, and a failure rolls the change back and shows the error. The server stays the
+    // source of truth through the sync that follows every change.
 
     func capture(_ title: String, areaId: String? = nil, parentId: String? = nil) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        var body: [String: Any] = ["id": UUID().uuidString.lowercased(), "title": trimmed]
+        let id = UUID().uuidString.lowercased()
+        var body: [String: Any] = ["id": id, "title": trimmed]
         if let areaId { body["area_id"] = areaId }
         if let parentId { body["parent_id"] = parentId }
-        await mutate("POST", "v1/tasks", body: body)
+        captures += 1
+        await optimistic {
+            localInsert(id: id, title: trimmed, areaId: areaId, parentId: parentId)
+        } send: { api in
+            let result = try await api.request("POST", "v1/tasks", body: body, as: TaskEnvelope.self)
+            self.upsert(result.task)
+        }
     }
 
     /// Starts a task. If another task is active, asks for a "nerede kaldın?" note first.
@@ -227,41 +253,69 @@ final class AppStore {
     }
 
     func start(_ task: TaskItem, previousNote: String?, previousReason: ParkReason?) async {
-        guard let api else { return }
         var body: [String: Any] = ["source": "app"]
         if let previousNote { body["previous_note"] = JSONCoding.value(previousNote) }
         if let previousReason { body["previous_reason"] = previousReason.rawValue }
-        do {
+        starts += 1
+        await optimistic {
+            localStart(task, previousNote: previousNote, previousReason: previousReason)
+        } send: { api in
             let result = try await api.request("POST", "v1/tasks/\(task.id)/start", body: body, as: StartResponse.self)
-            upsert(result.task)
-            if let parked = result.parked { upsert(parked) }
-            await refresh()
-        } catch {
-            report(error)
+            self.upsert(result.task)
+            if let parked = result.parked { self.upsert(parked) }
         }
     }
 
     func park(_ task: TaskItem, note: String?, reason: ParkReason) async {
         var body: [String: Any] = ["reason": reason.rawValue, "source": "app"]
         if let note { body["note"] = JSONCoding.value(note) }
-        await mutate("POST", "v1/tasks/\(task.id)/park", body: body)
+        parks += 1
+        await optimistic {
+            localPark(task.id, note: note, reason: reason)
+        } send: { api in
+            try await self.sendTask("POST", "v1/tasks/\(task.id)/park", body: body, api: api)
+        }
     }
 
     func complete(_ task: TaskItem) async {
-        await mutate("POST", "v1/tasks/\(task.id)/complete", body: ["source": "app"])
+        completions += 1
+        await optimistic {
+            for id in [task.id] + subtasks(of: task.id).map(\.id) {
+                localSet(id) {
+                    guard $0.status.isOpen else { return }
+                    $0.status = .done
+                    $0.completedAt = .now
+                }
+            }
+        } send: { api in
+            try await self.sendTask("POST", "v1/tasks/\(task.id)/complete", body: ["source": "app"], api: api)
+        }
     }
 
     func reopen(_ task: TaskItem) async {
-        await mutate("POST", "v1/tasks/\(task.id)/reopen", body: ["source": "app"])
+        await optimistic {
+            localSet(task.id) {
+                $0.status = .inbox
+                $0.completedAt = nil
+            }
+        } send: { api in
+            try await self.sendTask("POST", "v1/tasks/\(task.id)/reopen", body: ["source": "app"], api: api)
+        }
     }
 
     func archive(_ task: TaskItem) async {
-        await mutate("POST", "v1/tasks/\(task.id)/archive", body: ["source": "app"])
+        await optimistic {
+            localSet(task.id) { $0.status = .archived }
+        } send: { api in
+            try await self.sendTask("POST", "v1/tasks/\(task.id)/archive", body: ["source": "app"], api: api)
+        }
     }
 
     func update(_ task: TaskItem, fields: [String: Any]) async {
-        guard !fields.isEmpty else { return }
-        await mutate("PATCH", "v1/tasks/\(task.id)", body: fields)
+        guard !fields.isEmpty, !isDemo else { return }
+        await optimistic {} send: { api in
+            try await self.sendTask("PATCH", "v1/tasks/\(task.id)", body: fields, api: api)
+        }
     }
 
     func addNote(_ note: String, to task: TaskItem) async {
@@ -276,26 +330,77 @@ final class AppStore {
     }
 
     func delete(_ task: TaskItem) async {
-        guard let api else { return }
-        do {
-            try await api.send("DELETE", "v1/tasks/\(task.id)")
-            tasks[task.id] = nil
+        await optimistic {
             for sub in subtasks(of: task.id) { tasks[sub.id] = nil }
+            tasks[task.id] = nil
+        } send: { api in
+            try await api.send("DELETE", "v1/tasks/\(task.id)")
+        }
+    }
+
+    /// Counters the views watch to play haptics for the matching action.
+    private(set) var captures = 0
+    private(set) var starts = 0
+    private(set) var parks = 0
+    private(set) var completions = 0
+
+    /// Applies `change` at once with animation, then sends the request. On failure the task
+    /// list is restored and the error shown. Demo runs stop after the local change.
+    private func optimistic(_ change: () -> Void, send: (APIClient) async throws -> Void) async {
+        let before = tasks
+        withAnimation(.snappy) { change() }
+        guard !isDemo, let api else { return }
+        do {
+            try await send(api)
             await refresh()
         } catch {
+            withAnimation(.snappy) { tasks = before }
             report(error)
         }
     }
 
-    /// Sends a request that returns `{ task }`, applies it, then syncs history.
-    private func mutate(_ method: String, _ path: String, body: [String: Any]) async {
-        guard let api else { return }
-        do {
-            let result = try await api.request(method, path, body: body, as: TaskEnvelope.self)
-            upsert(result.task)
-            await refresh()
-        } catch {
-            report(error)
+    /// Sends a request that returns `{ task }` and applies the server's copy.
+    private func sendTask(_ method: String, _ path: String, body: [String: Any], api: APIClient) async throws {
+        let result = try await api.request(method, path, body: body, as: TaskEnvelope.self)
+        upsert(result.task)
+    }
+
+    // MARK: - Local changes (mirror the Worker's rules)
+
+    private func localSet(_ id: String, _ change: (inout TaskItem) -> Void) {
+        guard var task = tasks[id] else { return }
+        change(&task)
+        task.updatedAt = .now
+        tasks[id] = task
+    }
+
+    private func localInsert(id: String, title: String, areaId: String?, parentId: String?) {
+        tasks[id] = TaskItem(
+            id: id, areaId: areaId, parentId: parentId, title: title, details: nil, status: .inbox,
+            nextStep: nil, parkNote: nil, parkReason: nil, parkedAt: nil, startedAt: nil, dueAt: nil,
+            remindAt: nil, calendarEventId: nil, sort: 0, createdVia: "app", createdAt: .now,
+            updatedAt: .now, completedAt: nil, deletedAt: nil
+        )
+    }
+
+    private func localPark(_ id: String, note: String?, reason: ParkReason) {
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        localSet(id) {
+            $0.status = .parked
+            if !trimmed.isEmpty { $0.parkNote = trimmed }
+            $0.parkReason = reason
+            $0.parkedAt = .now
+        }
+    }
+
+    /// One active task: starting a task parks the current one first.
+    private func localStart(_ task: TaskItem, previousNote: String?, previousReason: ParkReason?) {
+        if let current = activeTask, current.id != task.id {
+            localPark(current.id, note: previousNote, reason: previousReason ?? .later)
+        }
+        localSet(task.id) {
+            $0.status = .active
+            $0.startedAt = .now
         }
     }
 
@@ -341,4 +446,65 @@ final class AppStore {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+
+    // MARK: - Demo data (debug builds only)
+
+    #if DEBUG
+    private func loadDemoData() {
+        let now = Date.now
+        func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
+        let made = ago(60 * 24 * 3)
+        let specs: [(String, String, String, String)] = [
+            ("İş", "briefcase", "indigo", "a-is"),
+            ("Hayat", "heart", "pink", "a-hayat"),
+            ("Spor", "figure.run", "orange", "a-spor"),
+            ("Yatırım", "chart.line.uptrend.xyaxis", "green", "a-yatirim"),
+        ]
+        areas = specs.enumerated().map { pair in
+            let a = pair.element
+            return Area(id: a.3, name: a.0, symbol: a.1, color: a.2, sort: pair.offset,
+                        createdAt: made, updatedAt: made, deletedAt: nil)
+        }
+        func task(
+            _ id: String, _ title: String, area: String?, status: TaskStatus, parent: String? = nil,
+            next: String? = nil, note: String? = nil, reason: ParkReason? = nil,
+            parked: Date? = nil, started: Date? = nil, due: Date? = nil
+        ) -> TaskItem {
+            TaskItem(
+                id: id, areaId: area, parentId: parent, title: title, details: nil, status: status,
+                nextStep: next, parkNote: note, parkReason: reason, parkedAt: parked, startedAt: started,
+                dueAt: due, remindAt: nil, calendarEventId: nil, sort: 0, createdVia: "app",
+                createdAt: made, updatedAt: parked ?? started ?? made,
+                completedAt: status == .done ? ago(90) : nil, deletedAt: nil
+            )
+        }
+        let today = Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: now)
+        let list = [
+            task("t1", "Çeyrek sunumunu hazırla", area: "a-is", status: .active,
+                 next: "Gelir grafiğini güncelle", started: ago(42), due: today),
+            task("t2", "Kira sözleşmesini yenile", area: "a-hayat", status: .parked,
+                 note: "Ev sahibinden yeni fiyatı bekliyorum, cuma tekrar ara.", reason: .waiting, parked: ago(30)),
+            task("t3", "Fon dağılımını gözden geçir", area: "a-yatirim", status: .parked,
+                 note: "Tablonun ikinci sekmesinde kaldım; tahvil oranı eksik.", reason: .needInfo, parked: ago(60 * 5)),
+            task("t4", "Koşu planını haftaya göre ayarla", area: "a-spor", status: .inbox),
+            task("t5", "Müşteri teklifine dön", area: "a-is", status: .inbox, due: ago(60 * 20)),
+            task("t6", "Diş randevusu al", area: nil, status: .inbox),
+            task("t7", "Banka ekstresini kontrol et", area: "a-yatirim", status: .done),
+            task("s1", "Taslak slaytlar", area: "a-is", status: .done, parent: "t1"),
+            task("s2", "Rakamları finansla doğrula", area: "a-is", status: .inbox, parent: "t1"),
+        ]
+        tasks = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
+        let history: [(String, String, String?, ParkReason?, Int?, Date)] = [
+            ("e1", "created", nil, nil, nil, made),
+            ("e2", "started", nil, nil, nil, ago(60 * 26)),
+            ("e3", "parked", "Grafikler hazır, metinler kaldı.", .later, 3_900, ago(60 * 25)),
+            ("e4", "resumed", nil, nil, nil, ago(42)),
+        ]
+        for e in history {
+            events[e.0] = TaskEvent(id: e.0, taskId: "t1", kind: e.1, note: e.2, reason: e.3,
+                                    durationSeconds: e.4, source: "app", occurredAt: e.5)
+        }
+    }
+
+    #endif
 }

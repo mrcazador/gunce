@@ -14,7 +14,7 @@ struct SignInView: View {
                 .font(.system(size: 56))
                 .accessibilityHidden(true)
             VStack(spacing: 8) {
-                Text("Günce")
+                Text("PickUp")
                     .font(.largeTitle.bold())
                 Text("Kaldığın yeri hiç kaybetme.")
                     .font(.title3)

@@ -18,7 +18,7 @@ struct APIError: LocalizedError {
     }
 }
 
-/// Thin JSON client for the Günce Worker. See docs/API.md.
+/// Thin JSON client for the PickUp Worker. See docs/API.md.
 final class APIClient {
     let baseURL: URL
     var token: String?
