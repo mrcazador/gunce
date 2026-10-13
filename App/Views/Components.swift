@@ -73,6 +73,12 @@ struct TaskRow: View {
                     if showArea, let area = store.area(task.areaId) {
                         AreaLabel(area: area)
                     }
+                    let steps = store.progress(of: task.id)
+                    if steps.total > 0 {
+                        Label("\(steps.done)/\(steps.total)", systemImage: "checklist")
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("\(steps.total) adımın \(steps.done) tanesi bitti")
+                    }
                     if let due = task.dueAt {
                         Label(dueText(due), systemImage: "calendar")
                             .foregroundStyle(due < .now && task.status.isOpen ? Color.red : Color.secondary)

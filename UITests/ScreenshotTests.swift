@@ -37,22 +37,36 @@ final class ScreenshotTests: XCTestCase {
             tap(app.buttons["Vazgeç"].firstMatch)
         }
 
+        if tap(app.buttons["Yeni görev ekle"].firstMatch) {
+            app.typeText("Faturayı öde")
+            snap("\(prefix)-04-capture")
+            tap(app.buttons["Vazgeç"].firstMatch)
+        }
+
         if tap(app.buttons["Ayarlar"].firstMatch) {
-            snap("\(prefix)-04-ayarlar")
+            snap("\(prefix)-05-ayarlar")
+            if tap(app.staticTexts["Profilim"].firstMatch) {
+                snap("\(prefix)-06-profil")
+                tap(app.navigationBars.buttons.firstMatch)
+            }
             tap(app.buttons["Bitti"].firstMatch)
         }
 
         if tap(app.tabBars.buttons["Görevler"].firstMatch) {
-            snap("\(prefix)-05-gorevler")
+            snap("\(prefix)-07-gorevler")
             if tap(app.staticTexts["Çeyrek sunumunu hazırla"].firstMatch) {
-                snap("\(prefix)-06-detay")
+                snap("\(prefix)-08-detay")
                 app.swipeUp()
-                snap("\(prefix)-07-detay-iz")
+                snap("\(prefix)-09-detay-adimlar")
+                if tap(app.buttons["Diğer"].firstMatch) {
+                    snap("\(prefix)-10-detay-menu")
+                    app.tap()
+                }
             }
         }
 
         if tap(app.tabBars.buttons["Bugün"].firstMatch) {
-            snap("\(prefix)-08-bugun")
+            snap("\(prefix)-11-bugun")
         }
 
         if tap(app.tabBars.buttons["Ara"].firstMatch) {
@@ -61,7 +75,7 @@ final class ScreenshotTests: XCTestCase {
                 field.tap()
                 field.typeText("kira")
             }
-            snap("\(prefix)-09-ara")
+            snap("\(prefix)-12-ara")
         }
     }
 

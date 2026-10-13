@@ -6,6 +6,7 @@ struct NowView: View {
     @State private var showSettings = false
 
     var body: some View {
+        @Bindable var store = store
         NavigationStack {
             List {
                 Section {
@@ -41,6 +42,10 @@ struct NowView: View {
             }
             .navigationTitle("Şimdi")
             .navigationDestination(for: String.self) { id in
+                TaskDetailView(taskID: id)
+            }
+            // Opened from a notification tap.
+            .navigationDestination(item: $store.openTaskID) { id in
                 TaskDetailView(taskID: id)
             }
             .refreshable { await store.refresh() }
@@ -83,13 +88,20 @@ private struct ActiveTaskCard: View {
                     .foregroundStyle(.primary)
             }
 
-            if let next = task.nextStep, !next.isEmpty {
+            let progress = store.progress(of: task.id)
+            if let step = store.nextStep(of: task.id) {
+                NextStepRow(step: step, done: progress.done, total: progress.total)
+            } else if let next = task.nextStep, !next.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Sıradaki adım")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(next)
                 }
+            } else if progress.total > 0 {
+                Label("Tüm adımlar bitti", systemImage: "checkmark.seal")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             } else if let note = task.parkNote, !note.isEmpty {
                 ParkNoteText(note: note)
             }
@@ -188,5 +200,51 @@ private struct ParkedRow: View {
             if let parked = task.parkedAt {
                 Text(parked, format: .relative(presentation: .named))
             }
+    }
+}
+
+/// The first open step of the active task, checked off in place so the next one moves up.
+private struct NextStepRow: View {
+    @Environment(AppStore.self) private var store
+    let step: TaskItem
+    let done: Int
+    let total: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Sıradaki adım")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(done)/\(total)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("\(total) adımın \(done) tanesi bitti")
+            }
+            ProgressView(value: Double(done), total: Double(max(total, 1)))
+                .tint(Color.primary)
+                .accessibilityHidden(true)
+            Button {
+                Task { await store.complete(step) }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "circle")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                    Text(step.title)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("\(step.title), bitti olarak işaretle")
+            .id(step.id)
+            .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
+        }
     }
 }

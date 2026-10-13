@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One task: content, where you left off, subtasks, actions and the "İz" history.
+/// One task: its main action, content, steps, where you left off and the "İz" history.
 struct TaskDetailView: View {
     @Environment(AppStore.self) private var store
     let taskID: String
@@ -19,14 +19,19 @@ private struct TaskDetailForm: View {
     @Environment(\.dismiss) private var dismiss
     let task: TaskItem
 
-    @State private var draft: Draft
-    @State private var newSubtask = ""
+    private enum Field: Hashable { case title, details, newStep, note }
+
+    @State private var title: String
+    @State private var details: String
+    @State private var newStep = ""
     @State private var newNote = ""
     @State private var confirmDelete = false
+    @FocusState private var focus: Field?
 
     init(task: TaskItem) {
         self.task = task
-        _draft = State(initialValue: Draft(task))
+        _title = State(initialValue: task.title)
+        _details = State(initialValue: task.details ?? "")
     }
 
     var body: some View {
@@ -38,28 +43,14 @@ private struct TaskDetailForm: View {
             .listRowInsets(EdgeInsets())
 
             Section {
-                TextField("Başlık", text: $draft.title, axis: .vertical)
+                TextField("Başlık", text: $title, axis: .vertical)
                     .font(.headline)
-                TextField("Sıradaki adım", text: $draft.nextStep, axis: .vertical)
-                TextField("Ayrıntılar", text: $draft.details, axis: .vertical)
-                    .lineLimit(3...10)
-            }
-
-            Section {
-                Picker("Alan", selection: $draft.areaId) {
-                    Text("Alansız").tag(String?.none)
-                    ForEach(store.sortedAreas) { area in
-                        Label(area.name, systemImage: area.symbol).tag(Optional(area.id))
-                    }
-                }
-                Toggle("Tarih", isOn: $draft.hasDue)
-                if draft.hasDue {
-                    DatePicker("Ne zaman", selection: $draft.dueAt)
-                }
-                Toggle("Hatırlat", isOn: $draft.hasRemind)
-                if draft.hasRemind {
-                    DatePicker("Hatırlatma", selection: $draft.remindAt)
-                }
+                    .focused($focus, equals: .title)
+                    .submitLabel(.done)
+                    .onSubmit(saveText)
+                TextField("Ayrıntılar", text: $details, axis: .vertical)
+                    .lineLimit(2...10)
+                    .focused($focus, equals: .details)
             }
 
             if task.status == .parked || task.parkNote?.isEmpty == false {
@@ -75,26 +66,33 @@ private struct TaskDetailForm: View {
             }
 
             if task.parentId == nil {
-                Section("Alt görevler") {
-                    ForEach(store.subtasks(of: task.id)) { sub in
-                        SubtaskRow(task: sub)
-                    }
-                    TextField("Alt görev ekle", text: $newSubtask)
-                        .submitLabel(.done)
-                        .onSubmit {
-                            let title = newSubtask
-                            newSubtask = ""
-                            Task { await store.capture(title, areaId: task.areaId, parentId: task.id) }
-                        }
-                }
+                stepsSection
             }
 
             Section {
-                actions
+                Picker("Alan", selection: areaBinding) {
+                    Text("Alansız").tag(String?.none)
+                    ForEach(store.sortedAreas) { area in
+                        Label(area.name, systemImage: area.symbol).tag(Optional(area.id))
+                    }
+                }
+                Toggle("Tarih", isOn: dateToggle(\.dueAt))
+                if task.dueAt != nil {
+                    DatePicker("Ne zaman", selection: dateBinding(\.dueAt))
+                }
+                Toggle("Hatırlat", isOn: dateToggle(\.remindAt))
+                if task.remindAt != nil {
+                    DatePicker("Hatırlatma", selection: dateBinding(\.remindAt))
+                }
+            } footer: {
+                if task.dueAt != nil, store.calendarSyncEnabled {
+                    Text("Bu görev PickUp takviminde de görünür.")
+                }
             }
 
             Section("İz") {
                 TextField("Not ekle", text: $newNote, axis: .vertical)
+                    .focused($focus, equals: .note)
                     .submitLabel(.done)
                     .onSubmit {
                         let note = newNote
@@ -109,10 +107,16 @@ private struct TaskDetailForm: View {
         .navigationTitle(task.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if draft != Draft(task) {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Kaydet", action: save)
-                        .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu("Diğer", systemImage: "ellipsis") {
+                    if task.status == .inbox || task.status == .parked {
+                        Button("Arşivle", systemImage: "archivebox") {
+                            Task { await store.archive(task) }
+                        }
+                    }
+                    Button("Sil", systemImage: "trash", role: .destructive) {
+                        confirmDelete = true
+                    }
                 }
             }
         }
@@ -124,16 +128,132 @@ private struct TaskDetailForm: View {
                 }
             }
         } message: {
-            Text("Alt görevleri de silinir.")
+            Text(store.subtasks(of: task.id).isEmpty ? "Bu geri alınamaz." : "Adımları da silinir. Bu geri alınamaz.")
         }
+        .onChange(of: focus) { old, _ in
+            if old == .title || old == .details { saveText() }
+        }
+        .onDisappear(perform: saveText)
         .task(id: task.id) {
-            draft = Draft(task)
             await store.loadHistory(of: task.id)
         }
-        .onChange(of: task.updatedAt) {
-            draft = Draft(task)
+    }
+
+    // MARK: - Steps
+
+    private var stepsSection: some View {
+        let steps = store.subtasks(of: task.id)
+        let progress = store.progress(of: task.id)
+        return Section {
+            ForEach(steps) { step in
+                StepRow(step: step, isFirst: step.id == steps.first?.id, isLast: step.id == steps.last?.id) { offset in
+                    guard let index = steps.firstIndex(where: { $0.id == step.id }) else { return }
+                    let target = offset < 0 ? index - 1 : index + 2
+                    Task { await store.moveSubtasks(of: task.id, from: IndexSet(integer: index), to: target) }
+                }
+            }
+            .onMove { source, destination in
+                Task { await store.moveSubtasks(of: task.id, from: source, to: destination) }
+            }
+            .onDelete { offsets in
+                let doomed = offsets.map { steps[$0] }
+                Task { for step in doomed { await store.delete(step) } }
+            }
+            HStack(spacing: 12) {
+                Image(systemName: "plus")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+                TextField("Adım ekle", text: $newStep)
+                    .focused($focus, equals: .newStep)
+                    .submitLabel(.next)
+                    .onSubmit(addStep)
+            }
+        } header: {
+            HStack {
+                Text("Adımlar")
+                Spacer()
+                if progress.total > 0 {
+                    Text("\(progress.done)/\(progress.total)")
+                        .monospacedDigit()
+                        .accessibilityLabel("\(progress.total) adımın \(progress.done) tanesi bitti")
+                }
+            }
+        } footer: {
+            if progress.total > 0 {
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressView(value: Double(progress.done), total: Double(progress.total))
+                        .tint(Color.primary)
+                        .accessibilityHidden(true)
+                    Text("İlk açık adım Şimdi ekranında sıradaki adım olarak görünür. Sıralamak için basılı tutup sürükle.")
+                }
+            } else {
+                Text("İşi küçük adımlara böl; ilk açık adım Şimdi ekranında görünür.")
+            }
         }
     }
+
+    private func addStep() {
+        let text = newStep
+        newStep = ""
+        focus = .newStep
+        Task { await store.capture(text, areaId: task.areaId, parentId: task.id) }
+    }
+
+    // MARK: - Saving
+
+    /// Text is saved when you leave the field; pickers and toggles save at once.
+    private func saveText() {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let current = store.tasks[task.id] else { return }
+        guard !trimmedTitle.isEmpty else {
+            title = current.title
+            return
+        }
+        guard trimmedTitle != current.title || trimmedDetails != (current.details ?? "") else { return }
+        Task {
+            await store.edit(current) {
+                $0.title = trimmedTitle
+                $0.details = trimmedDetails.isEmpty ? nil : trimmedDetails
+            }
+        }
+    }
+
+    private var areaBinding: Binding<String?> {
+        Binding(
+            get: { task.areaId },
+            set: { newValue in Task { await store.edit(task) { $0.areaId = newValue } } }
+        )
+    }
+
+    private func dateToggle(_ key: WritableKeyPath<TaskItem, Date?>) -> Binding<Bool> {
+        Binding(
+            get: { task[keyPath: key] != nil },
+            set: { on in
+                Task {
+                    if on, key == \TaskItem.remindAt { await Reminders.requestPermission() }
+                    await store.edit(task) { $0[keyPath: key] = on ? Self.nextHour : nil }
+                }
+            }
+        )
+    }
+
+    private func dateBinding(_ key: WritableKeyPath<TaskItem, Date?>) -> Binding<Date> {
+        Binding(
+            get: { task[keyPath: key] ?? Self.nextHour },
+            set: { date in Task { await store.edit(task) { $0[keyPath: key] = date } } }
+        )
+    }
+
+    /// Next full hour, so switching a date on picks something sensible.
+    private static var nextHour: Date {
+        let calendar = Calendar.current
+        let hour = calendar.dateInterval(of: .hour, for: .now)?.start ?? .now
+        return calendar.date(byAdding: .hour, value: 1, to: hour) ?? .now
+    }
+
+    // MARK: - Main action
 
     /// The one prominent action for the task's state, with "Bitti" beside it while open.
     private var primaryActions: some View {
@@ -161,100 +281,84 @@ private struct TaskDetailForm: View {
             }
         }
     }
+}
 
-    @ViewBuilder
-    private var actions: some View {
-        if task.status == .inbox || task.status == .parked {
-            Button("Arşivle", systemImage: "archivebox") {
-                Task { await store.archive(task) }
+/// One step: check it off, rename it in place, swipe to delete, drag (or use the menu) to move.
+private struct StepRow: View {
+    @Environment(AppStore.self) private var store
+    let step: TaskItem
+    let isFirst: Bool
+    let isLast: Bool
+    /// -1 moves the step up, +1 down. The menu alternative to dragging.
+    let move: (Int) -> Void
+
+    @State private var title: String
+    @FocusState private var editing: Bool
+
+    init(step: TaskItem, isFirst: Bool, isLast: Bool, move: @escaping (Int) -> Void) {
+        self.step = step
+        self.isFirst = isFirst
+        self.isLast = isLast
+        self.move = move
+        _title = State(initialValue: step.title)
+    }
+
+    private var isDone: Bool { step.status == .done }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button {
+                Task {
+                    if isDone {
+                        await store.reopen(step)
+                    } else {
+                        await store.complete(step)
+                    }
+                }
+            } label: {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isDone ? Color.primary : Color.secondary)
+                    .frame(width: 28, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isDone ? "Adımı yeniden aç" : "Adımı bitti olarak işaretle")
+
+            TextField("Adım", text: $title, axis: .vertical)
+                .focused($editing)
+                .strikethrough(isDone)
+                .foregroundStyle(isDone ? .secondary : .primary)
+                .submitLabel(.done)
+                .onSubmit(save)
+                .onChange(of: editing) { _, now in
+                    if !now { save() }
+                }
+        }
+        .contextMenu {
+            if !isFirst {
+                Button("Yukarı taşı", systemImage: "arrow.up") { move(-1) }
+            }
+            if !isLast {
+                Button("Aşağı taşı", systemImage: "arrow.down") { move(1) }
+            }
+            Button("Sil", systemImage: "trash", role: .destructive) {
+                Task { await store.delete(step) }
             }
         }
-        Button("Sil", systemImage: "trash", role: .destructive) {
-            confirmDelete = true
+        .onChange(of: step.title) { _, newTitle in
+            if !editing { title = newTitle }
         }
     }
 
     private func save() {
-        let original = Draft(task)
-        let draft = draft
-        var fields: [String: Any] = [:]
-        if draft.title != original.title { fields["title"] = draft.title.trimmingCharacters(in: .whitespacesAndNewlines) }
-        if draft.nextStep != original.nextStep { fields["next_step"] = JSONCoding.value(draft.nextStep) }
-        if draft.details != original.details { fields["details"] = JSONCoding.value(draft.details) }
-        if draft.areaId != original.areaId { fields["area_id"] = (draft.areaId as Any?) ?? NSNull() }
-        if draft.hasDue != original.hasDue || (draft.hasDue && draft.dueAt != original.dueAt) {
-            fields["due_at"] = JSONCoding.value(draft.hasDue ? draft.dueAt : Optional<Date>.none)
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            title = step.title
+            return
         }
-        if draft.hasRemind != original.hasRemind || (draft.hasRemind && draft.remindAt != original.remindAt) {
-            fields["remind_at"] = JSONCoding.value(draft.hasRemind ? draft.remindAt : Optional<Date>.none)
-        }
-        let changes = fields
-        Task { await store.update(task, fields: changes) }
-    }
-}
-
-/// Editable copy of a task's content fields.
-private struct Draft: Equatable {
-    var title = ""
-    var nextStep = ""
-    var details = ""
-    var areaId: String? = nil
-    var hasDue = false
-    var dueAt = Date.now
-    var hasRemind = false
-    var remindAt = Date.now
-
-    init() {}
-
-    /// Dates only count while their toggle is on.
-    static func == (a: Draft, b: Draft) -> Bool {
-        a.title == b.title && a.nextStep == b.nextStep && a.details == b.details && a.areaId == b.areaId
-            && a.hasDue == b.hasDue && (!a.hasDue || a.dueAt == b.dueAt)
-            && a.hasRemind == b.hasRemind && (!a.hasRemind || a.remindAt == b.remindAt)
-    }
-
-    init(_ task: TaskItem) {
-        title = task.title
-        nextStep = task.nextStep ?? ""
-        details = task.details ?? ""
-        areaId = task.areaId
-        hasDue = task.dueAt != nil
-        dueAt = task.dueAt ?? Self.defaultDate
-        hasRemind = task.remindAt != nil
-        remindAt = task.remindAt ?? Self.defaultDate
-    }
-
-    /// Next full hour, so toggling a date on picks something sensible and stable.
-    private static var defaultDate: Date {
-        let calendar = Calendar.current
-        let hour = calendar.dateInterval(of: .hour, for: .now)?.start ?? .now
-        return calendar.date(byAdding: .hour, value: 1, to: hour) ?? .now
-    }
-}
-
-private struct SubtaskRow: View {
-    @Environment(AppStore.self) private var store
-    let task: TaskItem
-
-    var body: some View {
-        Button {
-            Task {
-                if task.status == .done {
-                    await store.reopen(task)
-                } else {
-                    await store.complete(task)
-                }
-            }
-        } label: {
-            Label {
-                Text(task.title)
-                    .strikethrough(task.status == .done)
-                    .foregroundStyle(task.status == .done ? .secondary : .primary)
-            } icon: {
-                Image(systemName: task.status == .done ? "checkmark.circle.fill" : "circle")
-            }
-        }
-        .accessibilityValue(task.status == .done ? "Bitti" : "Açık")
+        guard trimmed != step.title else { return }
+        Task { await store.edit(step) { $0.title = trimmed } }
     }
 }
 

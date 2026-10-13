@@ -2,6 +2,12 @@ import Foundation
 import Observation
 import SwiftUI
 
+/// A request to open quick capture, optionally for a given day.
+struct CaptureRequest: Identifiable {
+    let id = UUID()
+    var dueAt: Date? = nil
+}
+
 /// A request to park a task, optionally starting another one right after (a switch).
 struct ParkRequest: Identifiable {
     let id = UUID()
@@ -22,6 +28,17 @@ final class AppStore {
 
     var parkRequest: ParkRequest? = nil
     var errorMessage: String? = nil
+    /// The quick-capture sheet, optionally with a date already set (from the calendar).
+    var captureRequest: CaptureRequest? = nil
+    /// A task to open, e.g. from a notification tap.
+    var openTaskID: String? = nil
+    /// Whether tasks with a date are written to the PickUp calendar in Apple Calendar.
+    var calendarSyncEnabled: Bool = UserDefaults.standard.bool(forKey: "pickup.calendarSync") {
+        didSet {
+            UserDefaults.standard.set(calendarSyncEnabled, forKey: "pickup.calendarSync")
+            tasksChanged()
+        }
+    }
 
     let isConfigured: Bool
     /// Debug builds launched with `-demo` run on invented data with no server (UI tests, screenshots).
@@ -50,6 +67,7 @@ final class AppStore {
         api?.token = token
         isSignedIn = token != nil
         if token != nil { loadSnapshot() }
+        CalendarSync.shared.onExternalChange = { [weak self] in self?.tasksChanged() }
     }
 
     // MARK: - Queries
@@ -89,6 +107,17 @@ final class AppStore {
         tasks.values
             .filter { $0.parentId == id }
             .sorted { ($0.sort, $0.createdAt) < ($1.sort, $1.createdAt) }
+    }
+
+    /// Steps done and total, for the progress bar.
+    func progress(of id: String) -> (done: Int, total: Int) {
+        let steps = subtasks(of: id).filter { $0.status != .archived }
+        return (steps.filter { $0.status == .done }.count, steps.count)
+    }
+
+    /// The first open step: what to do next when coming back to a task.
+    func nextStep(of id: String) -> TaskItem? {
+        subtasks(of: id).first { $0.status.isOpen }
     }
 
     func history(of id: String) -> [TaskEvent] {
@@ -188,6 +217,7 @@ final class AppStore {
                 more = page.hasMore
             }
             saveSnapshot()
+            tasksChanged()
         } catch {
             report(error)
         }
@@ -223,16 +253,23 @@ final class AppStore {
     // after, and a failure rolls the change back and shows the error. The server stays the
     // source of truth through the sync that follows every change.
 
-    func capture(_ title: String, areaId: String? = nil, parentId: String? = nil) async {
+    func capture(_ title: String, areaId: String? = nil, parentId: String? = nil, dueAt: Date? = nil) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let id = UUID().uuidString.lowercased()
-        var body: [String: Any] = ["id": id, "title": trimmed]
+        // New steps go to the end of their task's list.
+        let sort = parentId.map { (subtasks(of: $0).map(\.sort).max() ?? -1) + 1 } ?? 0
+        var body: [String: Any] = ["id": id, "title": trimmed, "sort": sort]
         if let areaId { body["area_id"] = areaId }
         if let parentId { body["parent_id"] = parentId }
+        if let dueAt { body["due_at"] = JSONCoding.formatDate(dueAt) }
         captures += 1
         await optimistic {
             localInsert(id: id, title: trimmed, areaId: areaId, parentId: parentId)
+            localSet(id) {
+                $0.sort = sort
+                $0.dueAt = dueAt
+            }
         } send: { api in
             let result = try await api.request("POST", "v1/tasks", body: body, as: TaskEnvelope.self)
             self.upsert(result.task)
@@ -266,12 +303,14 @@ final class AppStore {
         }
     }
 
-    func park(_ task: TaskItem, note: String?, reason: ParkReason) async {
+    func park(_ task: TaskItem, note: String?, reason: ParkReason, remindAt: Date? = nil) async {
         var body: [String: Any] = ["reason": reason.rawValue, "source": "app"]
         if let note { body["note"] = JSONCoding.value(note) }
+        if let remindAt { body["remind_at"] = JSONCoding.formatDate(remindAt) }
         parks += 1
         await optimistic {
             localPark(task.id, note: note, reason: reason)
+            if let remindAt { localSet(task.id) { $0.remindAt = remindAt } }
         } send: { api in
             try await self.sendTask("POST", "v1/tasks/\(task.id)/park", body: body, api: api)
         }
@@ -311,11 +350,40 @@ final class AppStore {
         }
     }
 
-    func update(_ task: TaskItem, fields: [String: Any]) async {
-        guard !fields.isEmpty, !isDemo else { return }
-        await optimistic {} send: { api in
+    /// Edits content fields: applied locally at once, then sent as a PATCH of what changed.
+    func edit(_ task: TaskItem, _ change: (inout TaskItem) -> Void) async {
+        guard let current = tasks[task.id] else { return }
+        var edited = current
+        change(&edited)
+        let fields = Self.changedFields(from: current, to: edited)
+        guard !fields.isEmpty else { return }
+        await optimistic {
+            localSet(task.id) { $0 = edited }
+        } send: { api in
             try await self.sendTask("PATCH", "v1/tasks/\(task.id)", body: fields, api: api)
         }
+    }
+
+    /// Moves steps within a task. Rewrites the sort order of the ones whose position changed.
+    func moveSubtasks(of parentId: String, from source: IndexSet, to destination: Int) async {
+        var ordered = subtasks(of: parentId)
+        ordered.move(fromOffsets: source, toOffset: destination)
+        for (index, step) in ordered.enumerated() where step.sort != Double(index) {
+            await edit(step) { $0.sort = Double(index) }
+        }
+    }
+
+    nonisolated static func changedFields(from a: TaskItem, to b: TaskItem) -> [String: Any] {
+        var fields: [String: Any] = [:]
+        if a.title != b.title { fields["title"] = b.title }
+        if a.details != b.details { fields["details"] = JSONCoding.value(b.details) }
+        if a.nextStep != b.nextStep { fields["next_step"] = JSONCoding.value(b.nextStep) }
+        if a.areaId != b.areaId { fields["area_id"] = (b.areaId as Any?) ?? NSNull() }
+        if a.dueAt != b.dueAt { fields["due_at"] = JSONCoding.value(b.dueAt) }
+        if a.remindAt != b.remindAt { fields["remind_at"] = JSONCoding.value(b.remindAt) }
+        if a.sort != b.sort { fields["sort"] = b.sort }
+        if a.calendarEventId != b.calendarEventId { fields["calendar_event_id"] = JSONCoding.value(b.calendarEventId) }
+        return fields
     }
 
     func addNote(_ note: String, to task: TaskItem) async {
@@ -330,12 +398,96 @@ final class AppStore {
     }
 
     func delete(_ task: TaskItem) async {
+        if !isDemo {
+            for item in [task] + subtasks(of: task.id) {
+                CalendarSync.shared.removeEvent(item.calendarEventId)
+            }
+        }
         await optimistic {
             for sub in subtasks(of: task.id) { tasks[sub.id] = nil }
             tasks[task.id] = nil
         } send: { api in
             try await api.send("DELETE", "v1/tasks/\(task.id)")
         }
+    }
+
+    // MARK: - Reminders and calendar
+
+    @ObservationIgnored private var sideEffects: Task<Void, Never>?
+
+    /// Debounced: reschedules notifications and syncs the PickUp calendar after task changes.
+    func tasksChanged() {
+        guard !isDemo, isSignedIn else { return }
+        sideEffects?.cancel()
+        sideEffects = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            await self.runSideEffects()
+        }
+    }
+
+    private func runSideEffects() async {
+        let all = Array(tasks.values)
+        await Reminders.reschedule(reminderItems(all))
+        if calendarSyncEnabled, CalendarSync.shared.isAuthorized {
+            for (task, change) in CalendarSync.shared.sync(all) {
+                await edit(task, change)
+            }
+        }
+    }
+
+    private func reminderItems(_ all: [TaskItem]) -> [Reminders.Item] {
+        var items: [Reminders.Item] = []
+        for task in all where task.status.isOpen {
+            let body: String? = {
+                if task.status == .parked, let note = task.parkNote, !note.isEmpty {
+                    return "Kaldığın yer: \(note)"
+                }
+                if let next = nextStep(of: task.id) { return "Sıradaki adım: \(next.title)" }
+                return task.nextStep
+            }()
+            if let remind = task.remindAt {
+                items.append(.init(taskID: task.id, title: task.title, body: body, date: remind, isDue: false))
+            }
+            if let due = task.dueAt, due != task.remindAt {
+                items.append(.init(taskID: task.id, title: task.title, body: body, date: due, isDue: true))
+            }
+        }
+        return items
+    }
+
+    /// Turns calendar sync on after asking for access. Returns whether it is on.
+    @discardableResult
+    func enableCalendarSync() async -> Bool {
+        let granted = await CalendarSync.shared.requestAccess()
+        calendarSyncEnabled = granted
+        return granted
+    }
+
+    /// Handles a notification action (or a plain tap) for a task.
+    func handleNotification(action: String, taskID: String) async {
+        guard let task = tasks[taskID] else { return }
+        switch action {
+        case Reminders.resumeAction:
+            requestStart(task)
+        case Reminders.snoozeAction:
+            await edit(task) { $0.remindAt = Date.now.addingTimeInterval(3600) }
+        case Reminders.doneAction:
+            await complete(task)
+        default:
+            openTaskID = taskID
+        }
+    }
+
+    // MARK: - Profile
+
+    func loadMemberSince() async -> Date? {
+        guard let api else { return nil }
+        struct Me: Decodable {
+            struct User: Decodable { let createdAt: Date }
+            let user: User
+        }
+        return try? await api.request("GET", "v1/me", as: Me.self).user.createdAt
     }
 
     /// Counters the views watch to play haptics for the matching action.
@@ -349,6 +501,7 @@ final class AppStore {
     private func optimistic(_ change: () -> Void, send: (APIClient) async throws -> Void) async {
         let before = tasks
         withAnimation(.snappy) { change() }
+        tasksChanged()
         guard !isDemo, let api else { return }
         do {
             try await send(api)
@@ -494,6 +647,7 @@ final class AppStore {
             task("s2", "Rakamları finansla doğrula", area: "a-is", status: .inbox, parent: "t1"),
         ]
         tasks = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
+        tasks["s2"]?.sort = 1
         let history: [(String, String, String?, ParkReason?, Int?, Date)] = [
             ("e1", "created", nil, nil, nil, made),
             ("e2", "started", nil, nil, nil, ago(60 * 26)),
