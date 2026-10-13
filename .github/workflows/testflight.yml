@@ -17,6 +17,10 @@ on:
         description: Upload the build to TestFlight (off = screenshots only)
         type: boolean
         default: true
+      shots:
+        description: Screenshot set to print into the job log (light, dark, xl, signin or all)
+        type: string
+        default: light
 
 permissions:
   contents: read
@@ -236,6 +240,21 @@ jobs:
                   shutil.copy(os.path.join(raw, a["exportedFileName"]), os.path.join(out, name))
           print("\n".join(sorted(os.listdir(out))))
           PY
+
+      - name: Print screenshots to the log
+        # Small JPEGs as base64, so a reviewer without artifact access can still read them.
+        env:
+          SHOTS: ${{ inputs.shots || 'light' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/small"
+          for f in "$RUNNER_TEMP"/shots/*.png; do
+            name="$(basename "$f" .png)"
+            case "$SHOTS" in all) ;; *) [[ "$name" == "$SHOTS"* ]] || continue ;; esac
+            sips -Z 760 -s format jpeg -s formatOptions 55 "$f" --out "$RUNNER_TEMP/small/$name.jpg" >/dev/null
+            echo "SHOT-BEGIN $name"
+            base64 -i "$RUNNER_TEMP/small/$name.jpg" | fold -w 3000 | sed 's/^/SHOT-DATA /'
+            echo "SHOT-END $name"
+          done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
