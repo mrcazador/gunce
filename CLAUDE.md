@@ -16,7 +16,7 @@ comments, commit messages and README stay in English.
 | iOS app | SwiftUI, iOS 26+, SwiftData cache, WidgetKit, ActivityKit, EventKit, App Intents | `App/`, `Widgets/` |
 | Project file | XcodeGen (`project.yml`). Never hand-edit or commit `.xcodeproj` | `project.yml` |
 | Backend | Cloudflare Worker (TypeScript) + D1 (SQLite). Sign in with Apple → opaque session tokens | `worker/` |
-| Claude access | Remote MCP endpoint on the same Worker (planned) | `worker/src/` |
+| Claude access | Remote MCP endpoint `/mcp` on the same Worker, OAuth 2.1 with an in-app pairing code | `worker/src/mcp.ts`, `worker/src/oauth.ts` |
 | Delivery | App: GitHub Actions macOS runner → TestFlight. Backend: `deploy-worker.yml` → Cloudflare | `.github/workflows/` |
 
 API reference: `docs/API.md`. Schema changes are new files in `worker/migrations/` (never edit an

@@ -14,7 +14,7 @@ const appleKeys = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/key
   cacheMaxAge: 6 * 60 * 60 * 1000,
 });
 
-const SESSION_DAYS = 90;
+export const SESSION_DAYS = 90;
 /** Only refresh last_used/expiry at most once per hour to keep writes low. */
 const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -30,12 +30,12 @@ const DEFAULT_AREAS = [
   { name: "Yatırım", symbol: "chart.line.uptrend.xyaxis", color: "green" },
 ];
 
-async function sha256Hex(input: string): Promise<string> {
+export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function randomToken(): string {
+export function randomToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
@@ -77,7 +77,7 @@ async function verifyAppleToken(env: Env, identityToken: string, rawNonce: strin
   }
 }
 
-async function createSession(env: Env, userId: string, kind: Session["kind"], label: string | null) {
+export async function createSession(env: Env, userId: string, kind: Session["kind"], label: string | null) {
   const token = randomToken();
   const expiresAt = expiry();
   await env.DB.prepare(

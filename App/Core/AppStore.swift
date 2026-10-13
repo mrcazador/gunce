@@ -510,6 +510,42 @@ final class AppStore {
         }
     }
 
+    // MARK: - Claude connector
+
+    /// The MCP server address to paste into Claude.
+    var claudeServerURL: String {
+        if isDemo { return "https://pickup.example.com/mcp" }
+        return api?.baseURL.appendingPathComponent("mcp").absoluteString ?? ""
+    }
+
+    func createClaudeLinkCode() async -> ClaudeLinkCode? {
+        if isDemo {
+            return ClaudeLinkCode(code: "K7QP-M3XA", expiresAt: .now.addingTimeInterval(600), mcpUrl: claudeServerURL)
+        }
+        guard let api else { return nil }
+        do {
+            return try await api.request("POST", "v1/mcp/link-code", body: [:], as: ClaudeLinkCode.self)
+        } catch {
+            report(error)
+            return nil
+        }
+    }
+
+    func claudeConnections() async -> [ClaudeConnection] {
+        guard !isDemo, let api else { return [] }
+        struct Envelope: Decodable { let connections: [ClaudeConnection] }
+        return (try? await api.request("GET", "v1/mcp/connections", as: Envelope.self).connections) ?? []
+    }
+
+    func disconnectClaude() async {
+        guard !isDemo, let api else { return }
+        do {
+            try await api.send("DELETE", "v1/mcp/connections")
+        } catch {
+            report(error)
+        }
+    }
+
     // MARK: - Profile
 
     func loadMemberSince() async -> Date? {

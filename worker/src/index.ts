@@ -1,7 +1,9 @@
-// Günce API — Cloudflare Worker + D1.
+// PickUp (Günce) API — Cloudflare Worker + D1.
 
 import { authenticate, deleteAccount, logout, signInWithApple } from "./auth";
 import { type Env, errorResponse, HttpError, isUuid, json } from "./http";
+import { mcp } from "./mcp";
+import * as oauth from "./oauth";
 import * as t from "./tasks";
 
 type Handler = (ctx: {
@@ -65,6 +67,22 @@ authed("POST", "/v1/tasks/:id/reopen", ({ req, env, params }, s) => t.reopenTask
 authed("POST", "/v1/tasks/:id/archive", ({ env, params }, s) => t.archiveTask(env, s, params[0]));
 authed("POST", "/v1/tasks/:id/notes", ({ req, env, params }, s) => t.addNote(req, env, s, params[0]));
 authed("GET", "/v1/tasks/:id/events", ({ env, params }, s) => t.listEvents(env, s, params[0]));
+
+// ---------------------------------------------------------------- Claude connector (MCP + OAuth)
+route("GET", "/.well-known/oauth-protected-resource(?:/mcp)?", false, async ({ url }) =>
+  oauth.protectedResourceMetadata(url),
+);
+route("GET", "/.well-known/oauth-authorization-server", false, async ({ url }) =>
+  oauth.authorizationServerMetadata(url),
+);
+route("POST", "/oauth/register", false, ({ req, env }) => oauth.register(req, env));
+route("GET", "/oauth/authorize", false, ({ url, env }) => oauth.authorizePage(url, env));
+route("POST", "/oauth/authorize", false, ({ req, env }) => oauth.authorizeSubmit(req, env));
+route("POST", "/oauth/token", false, ({ req, env }) => oauth.token(req, env));
+route("POST", "/mcp", false, ({ req, env, url }) => mcp(req, env, url));
+authed("POST", "/v1/mcp/link-code", ({ env, url }, s) => oauth.createLinkCode(env, s, url));
+authed("GET", "/v1/mcp/connections", ({ env }, s) => oauth.listConnections(env, s));
+authed("DELETE", "/v1/mcp/connections", ({ env }, s) => oauth.deleteConnections(env, s));
 
 // ---------------------------------------------------------------- sync and devices
 authed("GET", "/v1/sync", ({ url, env }, s) => t.sync(url, env, s));

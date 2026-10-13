@@ -129,3 +129,16 @@ struct APIErrorBody: Decodable {
     let error: String
     let message: String?
 }
+
+/// A pairing code for the Claude connector (POST /v1/mcp/link-code).
+struct ClaudeLinkCode: Decodable, Equatable {
+    let code: String
+    let expiresAt: Date
+    let mcpUrl: String
+}
+
+struct ClaudeConnection: Decodable, Hashable {
+    let label: String?
+    let createdAt: Date
+    let lastUsedAt: Date
+}
