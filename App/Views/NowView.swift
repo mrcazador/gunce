@@ -98,6 +98,7 @@ private struct ActiveTaskCard: View {
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
                     ParkNoteText(note: note)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if let step = store.nextStep(of: task.id) {
@@ -126,6 +127,8 @@ private struct ActiveTaskCard: View {
                 }
             }
         }
+        // Take the full height at large text sizes instead of squeezing rows together.
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 8)
     }
 }
