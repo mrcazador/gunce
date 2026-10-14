@@ -448,8 +448,15 @@ final class AppStore {
         }
         await Reminders.reschedule(reminders)
         if calendarSyncEnabled, CalendarSync.shared.isAuthorized {
-            for (task, change) in CalendarSync.shared.sync(all) {
-                await edit(task, change)
+            let edits = CalendarSync.shared.sync(all)
+            guard !edits.isEmpty else { return }
+            // Each edit calls tasksChanged(), which cancels this side-effects task. Saving the
+            // event ids from inside it cancelled its own requests ("Sunucuya ulaşılamadı") and
+            // lost the ids, so they are saved in a task of their own.
+            Task {
+                for (task, change) in edits {
+                    await self.edit(task, change)
+                }
             }
         }
     }
@@ -663,6 +670,7 @@ final class AppStore {
     }
 
     private func report(_ error: Error) {
+        if error is CancellationError { return }
         if let apiError = error as? APIError, apiError.status == 401 {
             clearSession()
         }

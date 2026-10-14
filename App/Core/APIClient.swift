@@ -82,6 +82,10 @@ final class APIClient {
         do {
             result = try await session.data(for: req)
         } catch {
+            // A cancelled request is not a connection problem; callers drop it silently.
+            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
             throw APIError(status: 0, code: "offline", message: error.localizedDescription)
         }
         let (data, response) = result
