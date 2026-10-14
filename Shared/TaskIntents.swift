@@ -20,3 +20,27 @@ struct CompleteTaskIntent: LiveActivityIntent {
         return .result()
     }
 }
+
+/// "Adımı bitir" and the step rows on the widgets. Runs in the app like `CompleteTaskIntent`.
+struct CompleteStepIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Adımı bitir"
+    static var isDiscoverable: Bool = false
+
+    @Parameter(title: "Görev")
+    var taskID: String
+
+    @Parameter(title: "Adım")
+    var stepID: String
+
+    init() {}
+
+    init(taskID: String, stepID: String) {
+        self.taskID = taskID
+        self.stepID = stepID
+    }
+
+    func perform() async throws -> some IntentResult {
+        await IntentBridge.completeStep(taskID: taskID, stepID: stepID)
+        return .result()
+    }
+}

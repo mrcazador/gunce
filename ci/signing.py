@@ -122,7 +122,7 @@ def create(out: str) -> None:
             },
         })["data"]
         uuid = profile["attributes"]["uuid"]
-        state["profiles"][bundle_id] = {"id": profile["id"], "uuid": uuid}
+        state["profiles"][bundle_id] = {"id": profile["id"], "uuid": uuid, "name": profile["attributes"]["name"]}
         save_state(out, state)
         with open(os.path.join(out, f"{uuid}.mobileprovision"), "wb") as f:
             f.write(base64.b64decode(profile["attributes"]["profileContent"]))

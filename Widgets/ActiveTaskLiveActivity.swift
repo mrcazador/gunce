@@ -21,10 +21,12 @@ struct ActiveTaskLiveActivity: Widget {
                         .accessibilityLabel(state.areaName ?? "Alan yok")
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(state.startedAt, style: .timer)
-                        .font(.headline.monospacedDigit())
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 80, alignment: .trailing)
+                    Text(StartTime.since(state.startedAt))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityLabel(StartTime.spoken(state.startedAt))
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(state.title)
@@ -47,9 +49,10 @@ struct ActiveTaskLiveActivity: Widget {
                     .foregroundStyle(tint)
                     .accessibilityLabel(state.title)
             } compactTrailing: {
-                Text(state.startedAt, style: .timer)
+                // Too narrow for "'tan beri": the start time alone.
+                Text(StartTime.clock(state.startedAt))
                     .monospacedDigit()
-                    .frame(maxWidth: 52)
+                    .accessibilityLabel(StartTime.spoken(state.startedAt))
             } minimal: {
                 Image(systemName: state.areaSymbol ?? "bookmark")
                     .foregroundStyle(tint)
@@ -72,12 +75,11 @@ private struct LockScreenActivityView: View {
                     .foregroundStyle(AreaPalette.color(state.areaColor))
                     .lineLimit(1)
                 Spacer()
-                Text(state.startedAt, style: .timer)
-                    .font(.subheadline.monospacedDigit())
+                Text(StartTime.since(state.startedAt))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: 90, alignment: .trailing)
-                    .accessibilityLabel(Text("Başlayalı \(state.startedAt, style: .relative)"))
+                    .lineLimit(1)
+                    .accessibilityLabel(StartTime.spoken(state.startedAt))
             }
             Text(state.title)
                 .font(.headline)

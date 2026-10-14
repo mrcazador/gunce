@@ -8,11 +8,25 @@ struct GunceApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            content
                 .environment(store)
                 .preferredColorScheme(Self.forcedColorScheme)
                 .onAppear { appDelegate.store = store }
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-demo-widgets") || args.contains("-demo-widgets-idle") {
+            WidgetGallery(idle: args.contains("-demo-widgets-idle"))
+        } else {
+            RootView()
+        }
+        #else
+        RootView()
+        #endif
     }
 
     /// Screenshot runs pass `-demo-dark` to capture Dark Mode. Release builds never force it.
