@@ -125,9 +125,14 @@ final class CalendarSync {
 
     /// Events on `day` from every calendar except PickUp's own (those are tasks already).
     func events(on day: Date) -> [EKEvent] {
+        events(on: day, days: 1)
+    }
+
+    /// Events in the `days` days starting at `day`, from every calendar except PickUp's own.
+    func events(on day: Date, days: Int) -> [EKEvent] {
         guard isAuthorized else { return [] }
         let start = Calendar.current.startOfDay(for: day)
-        guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return [] }
+        guard let end = Calendar.current.date(byAdding: .day, value: days, to: start) else { return [] }
         let ownID = UserDefaults.standard.string(forKey: calendarKey)
         let calendars = eventStore.calendars(for: .event).filter { $0.calendarIdentifier != ownID }
         guard !calendars.isEmpty else { return [] }

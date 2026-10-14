@@ -48,6 +48,26 @@ enum Reminders {
         }
     }
 
+    /// How many PickUp notifications are waiting to be delivered.
+    static func pendingCount() async -> Int {
+        await UNUserNotificationCenter.current().pendingNotificationRequests()
+            .filter { $0.identifier.hasPrefix(prefix) }
+            .count
+    }
+
+    /// A notification in five seconds, to check that PickUp can notify at all.
+    static func sendTest() async {
+        let content = UNMutableNotificationContent()
+        content.title = "PickUp"
+        content.body = "Bildirimler çalışıyor. Hatırlatmaların buradan gelecek."
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+        try? await UNUserNotificationCenter.current().add(
+            // Outside the "pickup." prefix so a reschedule does not cancel it.
+            UNNotificationRequest(identifier: "pickup-test", content: content, trigger: trigger)
+        )
+    }
+
     /// Replaces every pending PickUp notification with `items` (the soonest 60; iOS keeps 64).
     static func reschedule(_ items: [Item]) async {
         let allowed = await status()

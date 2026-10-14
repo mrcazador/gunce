@@ -33,6 +33,24 @@ Settings → Secrets and variables → Actions → New repository secret:
 | `APPLE_TEAM_ID` | Team ID |
 | `CLOUDFLARE_API_TOKEN` | Custom token `gunce-github-deploy`: Account → Workers Scripts Edit, D1 Edit, Account Settings Read; only your account |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare → Workers & Pages → Account ID |
+| `DIST_CERT_P12_BASE64` | Optional. The fixed Apple Distribution certificate, see below |
+| `DIST_CERT_P12_PASSWORD` | Optional. Its export password |
+
+### Fixed distribution certificate (optional)
+
+Without these two secrets each build creates its own certificate and revokes it. To sign with
+one long-lived certificate instead (it lasts a year; Apple allows three distribution
+certificates per team):
+
+1. On the Mac: Xcode → Settings → Accounts → your team → Manage Certificates → **+** →
+   **Apple Distribution**.
+2. Keychain Access → login → My Certificates → right-click "Apple Distribution: …" →
+   Export → `.p12`, with a strong password.
+3. `base64 -i Certificates.p12 | pbcopy` and paste it as `DIST_CERT_P12_BASE64`; the password
+   goes in `DIST_CERT_P12_PASSWORD`. Then delete the `.p12` file.
+
+CI still creates and deletes the App Store profiles on every build. When the certificate
+expires or is revoked the build fails with a clear message; make a new one the same way.
 
 Repository **variables** (Secrets and variables → Actions → Variables):
 
@@ -41,8 +59,8 @@ Repository **variables** (Secrets and variables → Actions → Variables):
 | `APPLE_BUNDLE_ID` | The app's bundle ID. The Worker accepts Sign in with Apple tokens only for this audience, and the app is built with it. The widget extension uses `<bundle ID>.widgets`; CI registers it and creates its profile |
 | `API_HOST` | Optional. API host without `https://`. When unset, the TestFlight build uses `gunce.<subdomain>.workers.dev` |
 
-In the Apple Developer portal, the App ID needs the **Sign in with Apple** capability. Automatic
-signing in CI usually enables it; if the archive step fails on provisioning, turn it on by hand
+In the Apple Developer portal, the App ID needs the **Sign in with Apple** capability. CI signs
+manually with the profiles it creates, so if the archive step fails on provisioning, turn it on by hand
 (Certificates, Identifiers & Profiles → Identifiers → the app → Sign in with Apple).
 
 After saving, delete the downloaded `.p8` from Downloads or move it to a password manager.
