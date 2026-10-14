@@ -69,36 +69,79 @@ final class CalendarSync {
 
     /// Brings events in line with tasks. Returns task edits to apply (new event ids, or a date
     /// the person changed in Calendar).
+    ///
+    /// Every event carries its task in `url` (pickup://task/<id>), so a lost event id never
+    /// leads to a second event; extra copies of a task's event are removed. Running it again
+    /// without task changes changes nothing, which also stops the loop through
+    /// `EKEventStoreChanged`.
     func sync(_ tasks: [TaskItem]) -> [(TaskItem, (inout TaskItem) -> Void)] {
-        guard let calendar = pickupCalendar() else { return [] }
+        // An empty list means the tasks are not loaded yet, not that every event is stale.
+        guard !tasks.isEmpty, let calendar = pickupCalendar() else { return [] }
         var edits: [(TaskItem, (inout TaskItem) -> Void)] = []
         var changed = false
 
+        // Every PickUp event from a year back to two years ahead (EventKit caps the span at
+        // four years), grouped by task.
+        let now = Date.now
+        let predicate = eventStore.predicateForEvents(
+            withStart: now.addingTimeInterval(-365 * 86_400),
+            end: now.addingTimeInterval(2 * 365 * 86_400),
+            calendars: [calendar]
+        )
+        var byTask: [String: [EKEvent]] = [:]
+        var unlinked: [EKEvent] = []
+        for event in eventStore.events(matching: predicate) {
+            if let id = Self.taskID(of: event) {
+                byTask[id, default: []].append(event)
+            } else {
+                unlinked.append(event)
+            }
+        }
+
+        func remove(_ event: EKEvent) {
+            if (try? eventStore.remove(event, span: .thisEvent, commit: false)) != nil { changed = true }
+        }
+
         for task in tasks {
-            let existing = task.calendarEventId.flatMap { eventStore.event(withIdentifier: $0) }
+            var candidates = byTask.removeValue(forKey: task.id) ?? []
+            if let id = task.calendarEventId, !candidates.contains(where: { $0.eventIdentifier == id }),
+               let byID = eventStore.event(withIdentifier: id), byID.calendar?.calendarIdentifier == calendar.calendarIdentifier {
+                candidates.append(byID)
+                unlinked.removeAll { $0.eventIdentifier == id }
+            }
+            // Events made before the link existed: same title, no link (the old duplicates).
+            let legacy = unlinked.filter { $0.title == task.title }
+            unlinked.removeAll { $0.title == task.title }
+            candidates += legacy
+
             guard task.status.isOpen, task.deletedAt == nil, let due = task.dueAt else {
-                if let existing {
-                    try? eventStore.remove(existing, span: .thisEvent, commit: false)
-                    changed = true
-                }
+                candidates.forEach(remove)
                 if task.calendarEventId != nil, task.deletedAt == nil {
                     edits.append((task, { $0.calendarEventId = nil }))
                 }
                 continue
             }
 
-            if let event = existing {
+            // Keep the event the task points at (or the first), drop the rest.
+            let keep = candidates.first { $0.eventIdentifier == task.calendarEventId } ?? candidates.first
+            for event in candidates where event !== keep { remove(event) }
+
+            if let event = keep {
                 let movedInCalendar = abs(event.startDate.timeIntervalSince(due)) > 59
                     && (event.lastModifiedDate ?? .distantPast) > task.updatedAt
                 if movedInCalendar {
                     let start = event.startDate ?? due
                     edits.append((task, { $0.dueAt = start }))
-                } else if abs(event.startDate.timeIntervalSince(due)) > 59 || event.title != task.title {
+                } else if abs(event.startDate.timeIntervalSince(due)) > 59 || event.title != task.title
+                            || Self.taskID(of: event) != task.id {
                     event.title = task.title
                     event.startDate = due
                     event.endDate = due.addingTimeInterval(Self.eventLength)
-                    try? eventStore.save(event, span: .thisEvent, commit: false)
-                    changed = true
+                    event.url = Self.link(task.id)
+                    if (try? eventStore.save(event, span: .thisEvent, commit: false)) != nil { changed = true }
+                }
+                if task.calendarEventId != event.eventIdentifier, let id = event.eventIdentifier {
+                    edits.append((task, { $0.calendarEventId = id }))
                 }
             } else {
                 let event = EKEvent(eventStore: eventStore)
@@ -106,15 +149,30 @@ final class CalendarSync {
                 event.title = task.title
                 event.startDate = due
                 event.endDate = due.addingTimeInterval(Self.eventLength)
+                event.url = Self.link(task.id)
                 if (try? eventStore.save(event, span: .thisEvent, commit: false)) != nil {
                     changed = true
-                    let id = event.eventIdentifier
-                    edits.append((task, { $0.calendarEventId = id }))
+                    if let id = event.eventIdentifier {
+                        edits.append((task, { $0.calendarEventId = id }))
+                    }
                 }
             }
         }
+
+        // Linked events whose task no longer exists in the app.
+        for events in byTask.values { events.forEach(remove) }
+
         if changed { try? eventStore.commit() }
         return edits
+    }
+
+    private static func link(_ taskID: String) -> URL? {
+        URL(string: "pickup://task/\(taskID)")
+    }
+
+    private static func taskID(of event: EKEvent) -> String? {
+        guard let url = event.url, url.scheme == "pickup", url.host == "task" else { return nil }
+        return url.pathComponents.dropFirst().first
     }
 
     /// Removes a deleted task's event.
