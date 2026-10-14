@@ -4,13 +4,14 @@ import SwiftUI
 import UIKit
 
 /// "Bugün": a day planner. A week strip picks the day; below it the day's tasks, reminders
-/// and Apple Calendar events in time order. Tasks with a date also live in the PickUp
-/// calendar when calendar sync is on.
+/// and Apple Calendar events in time order, or the whole week day by day. Tasks with a date
+/// also live in the PickUp calendar when calendar sync is on.
 struct TodayView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.openURL) private var openURL
     @State private var day = Calendar.current.startOfDay(for: .now)
     @State private var events: [EKEvent] = []
+    @AppStorage("pickup.today.week") private var showsWeek = false
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,13 @@ struct TodayView: View {
                     WeekStrip(selection: $day, hasItems: hasItems)
                         .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                         .listRowBackground(Color.clear)
+                    Picker("Görünüm", selection: $showsWeek.animation(.snappy)) {
+                        Text("Gün").tag(false)
+                        Text("Hafta").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0))
                 }
 
                 if !store.isDemo, !store.calendarSyncEnabled {
@@ -27,7 +35,7 @@ struct TodayView: View {
                     }
                 }
 
-                if isToday, !overdue.isEmpty {
+                if (isToday || (showsWeek && weekDays.contains(where: { calendar.isDateInToday($0) }))), !overdue.isEmpty {
                     Section("Gecikmiş") {
                         ForEach(overdue) { task in
                             taskLink(task)
@@ -35,28 +43,56 @@ struct TodayView: View {
                     }
                 }
 
-                Section {
-                    if agenda.isEmpty {
-                        Text(isToday ? "Bugün için planlanmış bir şey yok." : "Bu gün için planlanmış bir şey yok.")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 60)
-                    }
-                    ForEach(agenda) { item in
-                        switch item.kind {
-                        case .task(let task):
-                            taskLink(task)
-                        case .event(let event):
-                            CalendarEventRow(event: event) {
-                                let seconds = Int(event.startDate.timeIntervalSinceReferenceDate)
-                                if let url = URL(string: "calshow:\(seconds)") { openURL(url) }
+                if showsWeek {
+                    ForEach(weekDays, id: \.self) { date in
+                        let items = agenda(for: date)
+                        Section {
+                            if items.isEmpty {
+                                Text("Plan yok")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.tertiary)
                             }
+                            ForEach(items) { item in
+                                agendaRow(item)
+                            }
+                        } header: {
+                            Button {
+                                withAnimation(.snappy) {
+                                    day = date
+                                    showsWeek = false
+                                }
+                            } label: {
+                                HStack {
+                                    Text(title(for: date))
+                                        .foregroundStyle(calendar.isDateInToday(date) ? .primary : .secondary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Günü açar")
                         }
                     }
-                } header: {
-                    Text(dayTitle)
+                } else {
+                    Section {
+                        let items = agenda(for: day)
+                        if items.isEmpty {
+                            Text(isToday ? "Bugün için planlanmış bir şey yok." : "Bu gün için planlanmış bir şey yok.")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 60)
+                        }
+                        ForEach(items) { item in
+                            agendaRow(item)
+                        }
+                    } header: {
+                        Text(dayTitle)
+                    }
                 }
             }
-            .navigationTitle(isToday ? "Bugün" : dayTitle)
+            .navigationTitle(showsWeek ? weekTitle : (isToday ? "Bugün" : dayTitle))
             .navigationDestination(for: String.self) { id in
                 TaskDetailView(taskID: id)
             }
@@ -75,7 +111,7 @@ struct TodayView: View {
                 }
             }
             .refreshable { await store.refresh() }
-            .task(id: day) { loadEvents() }
+            .task(id: "\(day.timeIntervalSince1970)-\(showsWeek)") { loadEvents() }
             .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in loadEvents() }
             .onChange(of: store.calendarSyncEnabled) { loadEvents() }
         }
@@ -88,8 +124,27 @@ struct TodayView: View {
         .taskSwipeActions(task)
     }
 
+    @ViewBuilder
+    private func agendaRow(_ item: AgendaItem) -> some View {
+        switch item.kind {
+        case .task(let task):
+            taskLink(task)
+        case .event(let event):
+            CalendarEventRow(event: event) {
+                let seconds = Int(event.startDate.timeIntervalSinceReferenceDate)
+                if let url = URL(string: "calshow:\(seconds)") { openURL(url) }
+            }
+        }
+    }
+
     private func loadEvents() {
-        events = store.isDemo ? [] : CalendarSync.shared.events(on: day)
+        if store.isDemo {
+            events = []
+            return
+        }
+        events = showsWeek
+            ? CalendarSync.shared.events(on: weekDays.first ?? day, days: 7)
+            : CalendarSync.shared.events(on: day)
     }
 
     // MARK: - Data
@@ -97,11 +152,28 @@ struct TodayView: View {
     private var calendar: Calendar { .current }
     private var isToday: Bool { calendar.isDateInToday(day) }
 
-    private var dayTitle: String {
-        if calendar.isDateInToday(day) { return "Bugün" }
-        if calendar.isDateInTomorrow(day) { return "Yarın" }
-        if calendar.isDateInYesterday(day) { return "Dün" }
-        return day.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    private var dayTitle: String { title(for: day) }
+
+    private func title(for date: Date) -> String {
+        let name = date.formatted(.dateTime.weekday(.wide).day().month(.wide))
+        if calendar.isDateInToday(date) { return showsWeek ? "Bugün · \(name)" : "Bugün" }
+        if calendar.isDateInTomorrow(date) { return showsWeek ? "Yarın · \(name)" : "Yarın" }
+        if calendar.isDateInYesterday(date) { return showsWeek ? "Dün · \(name)" : "Dün" }
+        return name
+    }
+
+    /// The week of the selected day, in the locale's first weekday order.
+    private var weekDays: [Date] {
+        let start = calendar.dateInterval(of: .weekOfYear, for: day)?.start ?? day
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+    }
+
+    /// "13–19 Eki", or "Bu hafta".
+    private var weekTitle: String {
+        guard let first = weekDays.first, let last = weekDays.last else { return "Hafta" }
+        if weekDays.contains(where: { calendar.isDateInToday($0) }) { return "Bu hafta" }
+        let end = last.formatted(.dateTime.day().month(.abbreviated))
+        return "\(first.formatted(.dateTime.day()))–\(end)"
     }
 
     /// Today: the next full hour. Other days: 09:00.
@@ -140,8 +212,9 @@ struct TodayView: View {
         let kind: Kind
     }
 
-    /// Tasks due or reminding on the day, and calendar events, by time (all-day events first).
-    private var agenda: [AgendaItem] {
+    /// Tasks due or reminding on `day`, and calendar events touching it, by time
+    /// (all-day events first).
+    private func agenda(for day: Date) -> [AgendaItem] {
         var items: [AgendaItem] = []
         for task in openTasks {
             let dates = [task.dueAt, task.remindAt].compactMap { $0 }.filter { calendar.isDate($0, inSameDayAs: day) }
@@ -149,9 +222,12 @@ struct TodayView: View {
                 items.append(AgendaItem(id: task.id, time: first, kind: .task(task)))
             }
         }
-        for event in events {
-            let time = event.isAllDay ? calendar.startOfDay(for: day) : event.startDate ?? day
-            items.append(AgendaItem(id: "event-\(event.eventIdentifier ?? UUID().uuidString)", time: time, kind: .event(event)))
+        let start = calendar.startOfDay(for: day)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        for event in events where event.startDate < end && event.endDate > start {
+            let time = event.isAllDay || event.startDate < start ? start : event.startDate ?? start
+            let id = "event-\(event.eventIdentifier ?? UUID().uuidString)-\(start.timeIntervalSince1970)"
+            items.append(AgendaItem(id: id, time: time, kind: .event(event)))
         }
         return items.sorted { $0.time < $1.time }
     }

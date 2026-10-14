@@ -5,6 +5,14 @@ import WidgetKit
 /// Keeps the Live Activity and the widget in step with the active task.
 @MainActor
 enum LockScreen {
+    /// Off by default: a Live Activity always shows in the Dynamic Island too, which can be
+    /// distracting. The widgets keep working either way.
+    static let liveActivityKey = "pickup.liveActivity"
+
+    static var liveActivityEnabled: Bool {
+        UserDefaults.standard.bool(forKey: liveActivityKey)
+    }
+
     static func update(_ snapshot: LockScreenSnapshot) async {
         if snapshot != SharedSnapshot.load() {
             SharedSnapshot.save(snapshot)
@@ -13,7 +21,7 @@ enum LockScreen {
 
         var kept = false
         for activity in Activity<ActiveTaskAttributes>.activities {
-            if !kept, let state = snapshot.state, activity.attributes.taskID == snapshot.taskID {
+            if liveActivityEnabled, !kept, let state = snapshot.state, activity.attributes.taskID == snapshot.taskID {
                 kept = true
                 if activity.content.state != state {
                     await activity.update(ActivityContent(state: state, staleDate: nil))
@@ -23,7 +31,7 @@ enum LockScreen {
             }
         }
 
-        guard !kept, let id = snapshot.taskID, let state = snapshot.state,
+        guard liveActivityEnabled, !kept, let id = snapshot.taskID, let state = snapshot.state,
               ActivityAuthorizationInfo().areActivitiesEnabled
         else { return }
         // Starting needs the app in the foreground; a background change waits for the next one.

@@ -98,8 +98,11 @@ jobs:
         # match the certificate when the account name has non-ASCII letters (App Store 90035).
         # So each build signs with its own certificate, revoked again at the end of the job.
         # The archive uses it too (manual signing), so CI never creates development certificates.
+        # With the DIST_CERT_P12_* secrets set, the fixed certificate is used instead (never revoked).
         env:
           APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+          DIST_CERT_P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
+          DIST_CERT_P12_PASSWORD: ${{ secrets.DIST_CERT_P12_PASSWORD }}
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check cryptography==44.0.3

@@ -39,6 +39,13 @@ final class AppStore {
             tasksChanged()
         }
     }
+    /// The active task as a Live Activity on the Lock Screen (and so in the Dynamic Island).
+    var liveActivityEnabled: Bool = UserDefaults.standard.bool(forKey: LockScreen.liveActivityKey) {
+        didSet {
+            UserDefaults.standard.set(liveActivityEnabled, forKey: LockScreen.liveActivityKey)
+            Task { await updateLockScreen() }
+        }
+    }
 
     let isConfigured: Bool
     /// Debug builds launched with `-demo` run on invented data with no server (UI tests, screenshots).
@@ -433,7 +440,13 @@ final class AppStore {
     private func runSideEffects() async {
         let all = Array(tasks.values)
         await updateLockScreen()
-        await Reminders.reschedule(reminderItems(all))
+        let reminders = reminderItems(all)
+        // Ask once, the first time there is something to remind about (a due date set in the
+        // capture sheet never asked before, so those reminders were silently dropped).
+        if !reminders.isEmpty, await Reminders.status() == .notDetermined {
+            await Reminders.requestPermission()
+        }
+        await Reminders.reschedule(reminders)
         if calendarSyncEnabled, CalendarSync.shared.isAuthorized {
             for (task, change) in CalendarSync.shared.sync(all) {
                 await edit(task, change)

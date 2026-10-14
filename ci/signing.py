@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Short-lived App Store signing for CI.
 
-`create` makes a fresh Apple Distribution certificate and App Store provisioning
-profiles (app and widget extension) through the App Store Connect API, and writes a
-.p12, `<uuid>.mobileprovision` files and state.json. `revoke` deletes them again,
-so no long-lived signing key ever exists outside Apple.
+`create` makes App Store provisioning profiles (app and widget extension) through the
+App Store Connect API and writes a .p12, `<uuid>.mobileprovision` files and state.json.
+`revoke` deletes the profiles again.
+
+The certificate is the fixed one from the DIST_CERT_P12_BASE64 / DIST_CERT_P12_PASSWORD
+secrets when they are set (never revoked). Otherwise a fresh Apple Distribution certificate
+is created for the run and revoked by `revoke`.
 
 Nothing identifying is printed: Apple puts the account holder's name into the
 certificate, and CI logs of this repository are public.
 
-Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, APPLE_BUNDLE_ID.
+Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH, APPLE_BUNDLE_ID,
+optionally DIST_CERT_P12_BASE64 and DIST_CERT_P12_PASSWORD.
 """
 
 import base64
@@ -70,27 +74,21 @@ def call(method: str, path: str, body: dict | None = None) -> dict:
 
 def create(out: str) -> None:
     os.makedirs(out, exist_ok=True)
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    csr = (
-        x509.CertificateSigningRequestBuilder()
-        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Gunce CI")]))
-        .sign(key, hashes.SHA256())
-    )
-    csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode()
-
-    cert = call("POST", "/certificates", {
-        "data": {"type": "certificates", "attributes": {"certificateType": "DISTRIBUTION", "csrContent": csr_pem}},
-    })["data"]
-    # Write the id first so `revoke` can clean up even if a later step fails.
-    state = {"certificate_id": cert["id"]}
+    if os.environ.get("DIST_CERT_P12_BASE64"):
+        key, cert, cert_id = fixed_identity()
+        # The fixed certificate is never revoked: state has no certificate_id.
+        state: dict = {}
+        print("Using the fixed distribution certificate.")
+    else:
+        key, cert, cert_id = short_lived_identity(out)
+        state = {"certificate_id": cert_id}
     save_state(out, state)
 
-    der = base64.b64decode(cert["attributes"]["certificateContent"])
     password = secrets.token_urlsafe(24)
     p12 = pkcs12.serialize_key_and_certificates(
         name=b"gunce-ci",
         key=key,
-        cert=x509.load_der_x509_certificate(der),
+        cert=cert,
         cas=None,
         # macOS `security import` only reads the legacy PKCS#12 format (3DES, SHA-1 MAC).
         encryption_algorithm=serialization.PrivateFormat.PKCS12.encryption_builder()
@@ -117,7 +115,7 @@ def create(out: str) -> None:
                 },
                 "relationships": {
                     "bundleId": {"data": {"type": "bundleIds", "id": bundle_resource(bundle_id)}},
-                    "certificates": {"data": [{"type": "certificates", "id": cert["id"]}]},
+                    "certificates": {"data": [{"type": "certificates", "id": cert_id}]},
                 },
             },
         })["data"]
@@ -126,7 +124,43 @@ def create(out: str) -> None:
         save_state(out, state)
         with open(os.path.join(out, f"{uuid}.mobileprovision"), "wb") as f:
             f.write(base64.b64decode(profile["attributes"]["profileContent"]))
-    print(f"Created a short-lived distribution certificate and {len(state['profiles'])} App Store profiles.")
+    print(f"Created {len(state['profiles'])} App Store profiles.")
+
+
+def short_lived_identity(out: str):
+    """A new Apple Distribution certificate for this run; `revoke` deletes it again."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Gunce CI")]))
+        .sign(key, hashes.SHA256())
+    )
+    csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode()
+    cert = call("POST", "/certificates", {
+        "data": {"type": "certificates", "attributes": {"certificateType": "DISTRIBUTION", "csrContent": csr_pem}},
+    })["data"]
+    # Write the id first so `revoke` can clean up even if a later step fails.
+    save_state(out, {"certificate_id": cert["id"]})
+    der = base64.b64decode(cert["attributes"]["certificateContent"])
+    return key, x509.load_der_x509_certificate(der), cert["id"]
+
+
+def fixed_identity():
+    """The long-lived certificate from DIST_CERT_P12_BASE64 / DIST_CERT_P12_PASSWORD."""
+    data = base64.b64decode(os.environ["DIST_CERT_P12_BASE64"])
+    password = os.environ.get("DIST_CERT_P12_PASSWORD", "").encode() or None
+    try:
+        key, cert, _ = pkcs12.load_key_and_certificates(data, password)
+    except ValueError:
+        sys.exit("DIST_CERT_P12_BASE64 could not be opened; check DIST_CERT_P12_PASSWORD")
+    if key is None or cert is None:
+        sys.exit("DIST_CERT_P12_BASE64 must contain the certificate and its private key")
+    der = cert.public_bytes(serialization.Encoding.DER)
+    listed = call("GET", "/certificates?filter[certificateType]=DISTRIBUTION,IOS_DISTRIBUTION&limit=200")["data"]
+    for item in listed:
+        if base64.b64decode(item["attributes"].get("certificateContent") or "") == der:
+            return key, cert, item["id"]
+    sys.exit("The fixed distribution certificate is not active in this team (expired or revoked?)")
 
 
 def bundle_resource(identifier: str) -> str:
@@ -156,7 +190,7 @@ def revoke(out: str) -> None:
         call("DELETE", f"/profiles/{profile['id']}")
     if "certificate_id" in state:
         call("DELETE", f"/certificates/{state['certificate_id']}")
-    print("Revoked the short-lived certificate and profile.")
+    print("Deleted the profiles" + (" and the short-lived certificate." if "certificate_id" in state else "."))
 
 
 def save_state(out: str, state: dict) -> None:

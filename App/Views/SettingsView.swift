@@ -8,8 +8,11 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     @AppStorage(ProfileKeys.name) private var name = ""
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var pendingReminders = 0
+    @State private var testsSent = 0
 
     var body: some View {
+        @Bindable var store = store
         NavigationStack {
             Form {
                 Section {
@@ -35,6 +38,9 @@ struct SettingsView: View {
                     Toggle(isOn: calendarBinding) {
                         Label("Apple Takvim ile eşitle", systemImage: "calendar")
                     }
+                    Toggle(isOn: $store.liveActivityEnabled) {
+                        Label("Canlı Etkinlik", systemImage: "rectangle.inset.topright.filled")
+                    }
                     NavigationLink {
                         ClaudeConnectView()
                     } label: {
@@ -43,7 +49,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Bağlantılar")
                 } footer: {
-                    Text("Tarihli görevler telefonundaki PickUp takvimine yazılır; etkinliği orada taşırsan görevin tarihi de değişir.")
+                    Text("Tarihli görevler telefonundaki PickUp takvimine yazılır; etkinliği orada taşırsan görevin tarihi de değişir. Canlı Etkinlik aktif görevi kilit ekranında ve Dynamic Island'da gösterir; widget'lar bundan bağımsız çalışır.")
                 }
 
                 Section("Alanlar") {
@@ -63,7 +69,11 @@ struct SettingsView: View {
                     Button("Bitti") { dismiss() }
                 }
             }
-            .task { notificationStatus = await Reminders.status() }
+            .task {
+                notificationStatus = await Reminders.status()
+                pendingReminders = await Reminders.pendingCount()
+            }
+            .sensoryFeedback(.success, trigger: testsSent)
         }
     }
 
@@ -72,10 +82,19 @@ struct SettingsView: View {
         switch notificationStatus {
         case .authorized, .provisional, .ephemeral:
             LabeledContent {
-                Text("Açık")
+                Text(pendingReminders == 0 ? "Açık" : "Açık · \(pendingReminders) planlı")
             } label: {
                 Label("Bildirimler", systemImage: "bell")
             }
+            Button {
+                Task {
+                    await Reminders.sendTest()
+                    testsSent += 1
+                }
+            } label: {
+                Label(testsSent == 0 ? "Deneme bildirimi gönder" : "5 saniye içinde gelecek", systemImage: "bell.badge")
+            }
+            .accessibilityHint("Beş saniye sonra PickUp'tan bir bildirim gelir")
         case .denied:
             Button {
                 if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
