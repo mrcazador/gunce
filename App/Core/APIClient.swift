@@ -11,7 +11,7 @@ struct APIError: LocalizedError {
         case "another_task_active": "Başka bir görev aktif. Önce onu park et."
         case "invalid_state": "Bu görev şu an bu işlemi desteklemiyor."
         case "task_not_found": "Görev bulunamadı."
-        case "offline": "Sunucuya ulaşılamadı. Bağlantını kontrol et."
+        case "offline": "Sunucuya ulaşılamadı. Bağlantını kontrol et." + (message.map { " (\($0))" } ?? "")
         case "not_configured": "Sunucu adresi ayarlı değil."
         default: message ?? "Bir şeyler ters gitti (\(code))."
         }
@@ -78,16 +78,7 @@ final class APIClient {
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
 
-        let result: (Data, URLResponse)
-        do {
-            result = try await session.data(for: req)
-        } catch {
-            // A cancelled request is not a connection problem; callers drop it silently.
-            if error is CancellationError || (error as? URLError)?.code == .cancelled {
-                throw CancellationError()
-            }
-            throw APIError(status: 0, code: "offline", message: error.localizedDescription)
-        }
+        let result = try await load(req)
         let (data, response) = result
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
@@ -95,6 +86,41 @@ final class APIClient {
             throw APIError(status: status, code: body?.error ?? "http_\(status)", message: body?.message)
         }
         return data
+    }
+}
+
+extension APIClient {
+    /// Runs the request, retrying once when a connection dropped before an answer came back
+    /// (common right after the app returns from the background or a system alert). Requests
+    /// that create something are retried only when they surely never reached the server.
+    fileprivate func load(_ req: URLRequest) async throws -> (Data, URLResponse) {
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                return try await session.data(for: req)
+            } catch {
+                // A cancelled request is not a connection problem; callers drop it silently.
+                if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                    throw CancellationError()
+                }
+                let code = (error as? URLError)?.code
+                if attempt == 1, let code, Self.retryable(code, method: req.httpMethod ?? "GET") {
+                    try await Task.sleep(for: .milliseconds(400))
+                    continue
+                }
+                // The code tells "no internet" (-1009) from "host unreachable" (-1004) or a dropped
+                // connection (-1005) when the person reports the error.
+                throw APIError(status: 0, code: "offline", message: code.map { "kod \($0.rawValue)" })
+            }
+        }
+    }
+
+    private static func retryable(_ code: URLError.Code, method: String) -> Bool {
+        let neverSent: Set<URLError.Code> = [.cannotFindHost, .cannotConnectToHost, .dnsLookupFailed]
+        if neverSent.contains(code) { return true }
+        let transient: Set<URLError.Code> = [.networkConnectionLost, .timedOut, .secureConnectionFailed]
+        return transient.contains(code) && method != "POST"
     }
 }
 
