@@ -19,12 +19,18 @@ on:
         description: Upload the build to TestFlight (off = screenshots only)
         type: boolean
         default: true
+  # testflight.yml calls this with platform=mac (handy before this file is on main).
+  workflow_call:
+    inputs:
+      testflight:
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: mac-testflight
+  group: mac-testflight-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:

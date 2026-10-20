@@ -22,6 +22,11 @@ on:
         description: Screenshot set to print into the job log (light, dark, xl, signin or all)
         type: string
         default: light
+      platform:
+        description: Which app to build (ios or mac)
+        type: choice
+        options: [ios, mac]
+        default: ios
 
 permissions:
   contents: read
@@ -31,8 +36,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  mac:
+    if: github.event_name == 'workflow_dispatch' && inputs.platform == 'mac'
+    uses: ./.github/workflows/mac.yml
+    with:
+      testflight: ${{ inputs.testflight }}
+    secrets: inherit
+
   build-and-upload:
-    if: github.event_name == 'push' || inputs.testflight
+    if: github.event_name == 'push' || (inputs.testflight && inputs.platform != 'mac')
     runs-on: macos-latest
     timeout-minutes: 45
     env:
@@ -207,6 +219,7 @@ jobs:
   # Runs the UI tests on a simulator with invented demo data and keeps a screenshot of every
   # screen (light, dark, large text) as a build artifact, so layout can be reviewed off-device.
   screenshots:
+    if: github.event_name == 'push' || inputs.platform != 'mac'
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
