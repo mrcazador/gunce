@@ -56,3 +56,5 @@ App/Info.plist
 App/Gunce.entitlements
 Widgets/Info.plist
 Widgets/PickUpWidgets.entitlements
+Mac/Info.plist
+Mac/PickUpMac.entitlements

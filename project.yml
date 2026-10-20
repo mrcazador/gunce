@@ -111,6 +111,55 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
+  # The Mac app: menu bar panel plus a main window. Shares the store, API client and
+  # models with the iPhone app; no Lock Screen or Live Activity code.
+  PickUpMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    scheme: {}
+    sources:
+      - path: Mac
+        excludes:
+          - "Info.plist"
+          - "PickUpMac.entitlements"
+      - path: App/Core
+        excludes:
+          - "LockScreenSync.swift"
+      - path: Shared/LockScreen.swift
+      - path: Shared/StartTime.swift
+    settings:
+      base:
+        PRODUCT_NAME: PickUp
+        PRODUCT_BUNDLE_IDENTIFIER: $(GUNCE_BUNDLE_ID).mac
+        # Set only by CI, which archives with manual signing and a short-lived profile.
+        PROVISIONING_PROFILE_SPECIFIER: $(GUNCE_MAC_PROFILE)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+    entitlements:
+      path: Mac/PickUpMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.personal-information.calendars: true
+        com.apple.developer.applesignin: [Default]
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(GUNCE_BUNDLE_ID).mac
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: PickUp
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: tr
+        GunceAPIHost: $(GUNCE_API_HOST)
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSCalendarsFullAccessUsageDescription: Tarihli görevlerini PickUp takvimine yazmak ve takvimindeki etkinlikleri göstermek için.
+
   GunceUITests:
     type: bundle.ui-testing
     platform: iOS

@@ -1,0 +1,255 @@
+name: Mac TestFlight
+
+# Every push to main that touches the Mac app (or the code it shares with the iPhone app)
+# builds it and uploads it to TestFlight for macOS.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Mac/**"
+      - "App/Core/**"
+      - "Shared/LockScreen.swift"
+      - "Shared/StartTime.swift"
+      - "project.yml"
+      - "ci/**"
+      - ".github/workflows/mac.yml"
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload the build to TestFlight (off = screenshots only)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-testflight
+  cancel-in-progress: true
+
+jobs:
+  build-and-upload:
+    if: github.event_name == 'push' || inputs.testflight
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Write build settings (never committed)
+        env:
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+          API_HOST: ${{ vars.API_HOST }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$APPLE_BUNDLE_ID" || { echo "::error::Set the APPLE_BUNDLE_ID repository variable"; exit 1; }
+          if [ -z "$API_HOST" ]; then
+            sub="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["subdomain"])')"
+            API_HOST="gunce.${sub}.workers.dev"
+          fi
+          echo "API host: $API_HOST"
+          {
+            echo "GUNCE_API_HOST = ${API_HOST}"
+            echo "GUNCE_BUNDLE_ID = ${APPLE_BUNDLE_ID}"
+            echo "DEVELOPMENT_TEAM = ${TEAM_ID}"
+          } > App/Config/Secrets.xcconfig
+
+      - name: Install App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Install Apple intermediate certificates
+        run: |
+          for c in AppleWWDRCAG3 AppleWWDRCAG4 AppleWWDRCAG5 AppleWWDRCAG6; do
+            curl -fsSL -o "$RUNNER_TEMP/$c.cer" "https://www.apple.com/certificateauthority/$c.cer"
+            sudo security import "$RUNNER_TEMP/$c.cer" -k /Library/Keychains/System.keychain || true
+          done
+
+      - name: Create signing identity
+        # The fixed distribution certificate (DIST_CERT_P12_* secrets) signs the app; the
+        # installer certificate and the Mac App Store profile exist only for this run.
+        env:
+          APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+          SIGNING_PLATFORM: mac
+          DIST_CERT_P12_BASE64: ${{ secrets.DIST_CERT_P12_BASE64 }}
+          DIST_CERT_P12_PASSWORD: ${{ secrets.DIST_CERT_P12_PASSWORD }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check cryptography==44.0.3
+          ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            "$RUNNER_TEMP/venv/bin/python" ci/signing.py create "$RUNNER_TEMP/signing"
+
+          p12pw="$(cat "$RUNNER_TEMP/signing/p12-password")"
+          kcpw="$(openssl rand -hex 16)"
+          echo "::add-mask::$p12pw"
+          echo "::add-mask::$kcpw"
+          kc="$RUNNER_TEMP/signing/ci.keychain-db"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          for p12 in dist installer; do
+            security import "$RUNNER_TEMP/signing/$p12.p12" -k "$kc" -P "$p12pw" \
+              -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null
+          done
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$RUNNER_TEMP"/signing/*.provisionprofile "$dir/"
+          done
+          python3 - "$RUNNER_TEMP/signing/state.json" "$APPLE_BUNDLE_ID" >> "$GITHUB_ENV" <<'PY'
+          import json, sys
+          profiles = json.load(open(sys.argv[1]))["profiles"]
+          print(f"MAC_PROFILE={profiles[sys.argv[2] + '.mac']['name']}")
+          PY
+
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project Gunce.xcodeproj \
+            -scheme PickUpMac \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -archivePath "$RUNNER_TEMP/PickUp.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            GUNCE_MAC_PROFILE="$MAC_PROFILE" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            | tee "$RUNNER_TEMP/archive.log" | grep -E "error:|warning: .*deprecated|ARCHIVE (SUCCEEDED|FAILED)" || true
+          # Only error lines on failure: the full log names the signing certificate.
+          test -d "$RUNNER_TEMP/PickUp.xcarchive" || { grep -E "error:" "$RUNNER_TEMP/archive.log" | tail -50; exit 1; }
+
+      - name: Export signed package
+        run: |
+          sed -e "s/__TEAM_ID__/${TEAM_ID}/" ci/ExportOptionsMac.plist > "$RUNNER_TEMP/ExportOptions.plist"
+          python3 - "$RUNNER_TEMP/ExportOptions.plist" "$RUNNER_TEMP/signing/state.json" <<'PY'
+          import json, plistlib, sys
+          with open(sys.argv[1], "rb") as f:
+              options = plistlib.load(f)
+          with open(sys.argv[2]) as f:
+              profiles = json.load(f)["profiles"]
+          options["provisioningProfiles"] = {bundle: p["uuid"] for bundle, p in profiles.items()}
+          with open(sys.argv[1], "wb") as f:
+              plistlib.dump(options, f)
+          PY
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/PickUp.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" 2>&1 | grep -vE "Signing Identity|Certificate:" || true
+          ls "$RUNNER_TEMP/export"
+          test -f "$RUNNER_TEMP/export/PickUp.pkg" || { echo "::error::Export produced no package"; exit 1; }
+
+      - name: Verify signature
+        run: |
+          # Only the certificate kind is printed; names in the certificate stay out of public logs.
+          app="$RUNNER_TEMP/PickUp.xcarchive/Products/Applications/PickUp.app"
+          echo "App:"; codesign -dvv "$app" 2>&1 | grep -oE "Authority=Apple [A-Za-z ]+" | head -1
+          codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -p - || true
+          codesign --verify --deep --strict --verbose=2 "$app" 2>&1 | tail -2
+          echo "Package:"; pkgutil --check-signature "$RUNNER_TEMP/export/PickUp.pkg" | grep -E "^ *Status:" || true
+
+      - name: Upload to TestFlight
+        env:
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/asc
+        run: |
+          xcrun altool --upload-app --type macos \
+            --file "$RUNNER_TEMP/export/PickUp.pkg" \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Revoke short-lived signing identity
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/signing/state.json" ]; then
+            ASC_KEY_PATH="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+              "$RUNNER_TEMP/venv/bin/python" ci/signing.py revoke "$RUNNER_TEMP/signing"
+          fi
+          security delete-keychain "$RUNNER_TEMP/signing/ci.keychain-db" 2>/dev/null || true
+
+      - name: Remove key material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/signing" App/Config/Secrets.xcconfig
+
+  screenshots:
+    # Builds the Debug app unsigned and photographs it on invented demo data. No secrets.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Gunce.xcodeproj \
+            -scheme PickUpMac \
+            -configuration Debug \
+            -destination "platform=macOS" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/build.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          test -d "$RUNNER_TEMP/dd/Build/Products/Debug/PickUp.app" || { echo "::error::Build failed"; exit 1; }
+
+      - name: Take screenshots
+        run: |
+          app="$RUNNER_TEMP/dd/Build/Products/Debug/PickUp.app/Contents/MacOS/PickUp"
+          mkdir -p "$RUNNER_TEMP/shots"
+          shoot() {
+            name="$1"; shift
+            "$app" "$@" &
+            pid=$!
+            sleep 8
+            screencapture -x "$RUNNER_TEMP/shots/$name.png" || true
+            kill "$pid" 2>/dev/null || true
+            sleep 2
+          }
+          shoot mac-01-pencere -demo
+          shoot mac-02-panel -demo -demo-panel
+          shoot mac-03-pencere-koyu -demo -AppleInterfaceStyle Dark
+          ls -la "$RUNNER_TEMP/shots"
+
+      - name: Print screenshots to the log
+        run: |
+          mkdir -p "$RUNNER_TEMP/small"
+          for f in "$RUNNER_TEMP"/shots/*.png; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f" .png)"
+            sips -Z 1100 -s format jpeg -s formatOptions 55 "$f" --out "$RUNNER_TEMP/small/$name.jpg" >/dev/null
+            echo "SHOT-BEGIN $name"
+            base64 -i "$RUNNER_TEMP/small/$name.jpg" | fold -w 3000 | sed 's/^/SHOT-DATA /'
+            echo "SHOT-END $name"
+          done
