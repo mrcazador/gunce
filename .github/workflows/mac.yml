@@ -236,9 +236,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/shots"
           shoot() {
             name="$1"; shift
-            "$app" "$@" &
+            "$app" "$@" -ApplePersistenceIgnoreState YES &
             pid=$!
-            sleep 8
+            sleep 10
             screencapture -x "$RUNNER_TEMP/shots/$name.png" || true
             kill "$pid" 2>/dev/null || true
             sleep 2
