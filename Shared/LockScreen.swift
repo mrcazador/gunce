@@ -1,10 +1,13 @@
+#if os(iOS)
 import ActivityKit
+#endif
 import Foundation
 import Security
 import SwiftUI
 
 /// The active task as the Lock Screen shows it: in the Live Activity and in the widget.
-struct ActiveTaskAttributes: ActivityAttributes {
+/// (The Mac app compiles this file for the snapshot types; it has no Live Activity.)
+struct ActiveTaskAttributes {
     struct ContentState: Codable, Hashable {
         var title: String
         var areaName: String?
@@ -18,6 +21,10 @@ struct ActiveTaskAttributes: ActivityAttributes {
 
     var taskID: String
 }
+
+#if os(iOS)
+extension ActiveTaskAttributes: ActivityAttributes {}
+#endif
 
 /// What the widget reads. Written by the app after every task change.
 /// New fields have defaults and decode leniently, so an older saved snapshot still loads.

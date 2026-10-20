@@ -7,11 +7,16 @@ enum Keychain {
     private static let account = "token"
 
     private static var baseQuery: [String: Any] {
-        [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
+        #if os(macOS)
+        // The iOS-style keychain on the Mac: no access prompts, same accessibility rules.
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
+        return query
     }
 
     static func readToken() -> String? {

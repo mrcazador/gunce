@@ -1,5 +1,5 @@
+import CoreGraphics
 import EventKit
-import UIKit
 
 /// Two-way link with Apple Calendar.
 /// - Open tasks with a date get an event in a dedicated "PickUp" calendar.
@@ -54,7 +54,8 @@ final class CalendarSync {
         }
         let calendar = EKCalendar(for: .event, eventStore: eventStore)
         calendar.title = "PickUp"
-        calendar.cgColor = UIColor.systemIndigo.cgColor
+        // System indigo; CoreGraphics so the Mac app shares this file.
+        calendar.cgColor = CGColor(red: 0.35, green: 0.34, blue: 0.84, alpha: 1)
         calendar.source = eventStore.defaultCalendarForNewEvents?.source
             ?? eventStore.sources.first { $0.sourceType == .local }
         guard calendar.source != nil else { return nil }

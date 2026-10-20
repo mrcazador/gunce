@@ -79,7 +79,7 @@ jobs:
             echo "::warning::Repository variable APPLE_BUNDLE_ID is not set; Sign in with Apple will reject every token."
             APPLE_BUNDLE_ID="com.example.gunce"
           fi
-          npx wrangler deploy --var "APPLE_BUNDLE_IDS:${APPLE_BUNDLE_ID}"
+          npx wrangler deploy --var "APPLE_BUNDLE_IDS:${APPLE_BUNDLE_ID},${APPLE_BUNDLE_ID}.mac"
 
       - name: Smoke test
         run: |

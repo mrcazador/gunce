@@ -38,8 +38,12 @@ enum Reminders {
     @discardableResult
     static func requestPermission() async -> Bool {
         switch await status() {
-        case .authorized, .provisional, .ephemeral:
+        case .authorized, .provisional:
             return true
+        #if os(iOS)
+        case .ephemeral:
+            return true
+        #endif
         case .notDetermined:
             let granted = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             return granted ?? false

@@ -74,6 +74,7 @@ def call(method: str, path: str, body: dict | None = None) -> dict:
 
 def create(out: str) -> None:
     os.makedirs(out, exist_ok=True)
+    mac = os.environ.get("SIGNING_PLATFORM", "ios") == "mac"
     if os.environ.get("DIST_CERT_P12_BASE64"):
         key, cert, cert_id = fixed_identity()
         # The fixed certificate is never revoked: state has no certificate_id.
@@ -85,6 +86,49 @@ def create(out: str) -> None:
     save_state(out, state)
 
     password = secrets.token_urlsafe(24)
+    write_p12(os.path.join(out, "dist.p12"), key, cert, password)
+    with open(os.path.join(out, "p12-password"), "w") as f:
+        f.write(password)
+
+    app_id = os.environ["APPLE_BUNDLE_ID"]
+    if mac:
+        # The Mac App Store takes a .pkg signed with an installer certificate; it is made
+        # for this run only and revoked with the profiles.
+        installer_key, installer_cert, installer_id = short_lived_identity(out, "MAC_INSTALLER_DISTRIBUTION")
+        state["installer_certificate_id"] = installer_id
+        save_state(out, state)
+        write_p12(os.path.join(out, "installer.p12"), installer_key, installer_cert, password)
+        bundles = [(f"{app_id}.mac", "MAC_OS")]
+        profile_type, extension = "MAC_APP_STORE", "provisionprofile"
+    else:
+        # The app and its widget extension each need their own App Store profile.
+        bundles = [(app_id, "IOS"), (f"{app_id}.widgets", "IOS")]
+        profile_type, extension = "IOS_APP_STORE", "mobileprovision"
+
+    state["profiles"] = {}
+    for bundle_id, platform in bundles:
+        profile = call("POST", "/profiles", {
+            "data": {
+                "type": "profiles",
+                "attributes": {
+                    "name": f"Gunce CI {os.environ.get('GITHUB_RUN_ID', int(time.time()))} {bundle_id.rsplit('.', 1)[-1]}",
+                    "profileType": profile_type,
+                },
+                "relationships": {
+                    "bundleId": {"data": {"type": "bundleIds", "id": bundle_resource(bundle_id, platform)}},
+                    "certificates": {"data": [{"type": "certificates", "id": cert_id}]},
+                },
+            },
+        })["data"]
+        uuid = profile["attributes"]["uuid"]
+        state["profiles"][bundle_id] = {"id": profile["id"], "uuid": uuid, "name": profile["attributes"]["name"]}
+        save_state(out, state)
+        with open(os.path.join(out, f"{uuid}.{extension}"), "wb") as f:
+            f.write(base64.b64decode(profile["attributes"]["profileContent"]))
+    print(f"Created {len(state['profiles'])} App Store profiles.")
+
+
+def write_p12(path: str, key, cert, password: str) -> None:
     p12 = pkcs12.serialize_key_and_certificates(
         name=b"gunce-ci",
         key=key,
@@ -97,38 +141,12 @@ def create(out: str) -> None:
         .hmac_hash(hashes.SHA1())
         .build(password.encode()),
     )
-    with open(os.path.join(out, "dist.p12"), "wb") as f:
+    with open(path, "wb") as f:
         f.write(p12)
-    with open(os.path.join(out, "p12-password"), "w") as f:
-        f.write(password)
-
-    # The app and its widget extension each need their own App Store profile.
-    app_id = os.environ["APPLE_BUNDLE_ID"]
-    state["profiles"] = {}
-    for bundle_id in (app_id, f"{app_id}.widgets"):
-        profile = call("POST", "/profiles", {
-            "data": {
-                "type": "profiles",
-                "attributes": {
-                    "name": f"Gunce CI {os.environ.get('GITHUB_RUN_ID', int(time.time()))} {bundle_id.rsplit('.', 1)[-1]}",
-                    "profileType": "IOS_APP_STORE",
-                },
-                "relationships": {
-                    "bundleId": {"data": {"type": "bundleIds", "id": bundle_resource(bundle_id)}},
-                    "certificates": {"data": [{"type": "certificates", "id": cert_id}]},
-                },
-            },
-        })["data"]
-        uuid = profile["attributes"]["uuid"]
-        state["profiles"][bundle_id] = {"id": profile["id"], "uuid": uuid, "name": profile["attributes"]["name"]}
-        save_state(out, state)
-        with open(os.path.join(out, f"{uuid}.mobileprovision"), "wb") as f:
-            f.write(base64.b64decode(profile["attributes"]["profileContent"]))
-    print(f"Created {len(state['profiles'])} App Store profiles.")
 
 
-def short_lived_identity(out: str):
-    """A new Apple Distribution certificate for this run; `revoke` deletes it again."""
+def short_lived_identity(out: str, certificate_type: str = "DISTRIBUTION"):
+    """A new certificate for this run; `revoke` deletes it again."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     csr = (
         x509.CertificateSigningRequestBuilder()
@@ -137,10 +155,13 @@ def short_lived_identity(out: str):
     )
     csr_pem = csr.public_bytes(serialization.Encoding.PEM).decode()
     cert = call("POST", "/certificates", {
-        "data": {"type": "certificates", "attributes": {"certificateType": "DISTRIBUTION", "csrContent": csr_pem}},
+        "data": {"type": "certificates", "attributes": {"certificateType": certificate_type, "csrContent": csr_pem}},
     })["data"]
     # Write the id first so `revoke` can clean up even if a later step fails.
-    save_state(out, {"certificate_id": cert["id"]})
+    key_name = "certificate_id" if certificate_type == "DISTRIBUTION" else "installer_certificate_id"
+    state = load_state(out)
+    state[key_name] = cert["id"]
+    save_state(out, state)
     der = base64.b64decode(cert["attributes"]["certificateContent"])
     return key, x509.load_der_x509_certificate(der), cert["id"]
 
@@ -163,20 +184,41 @@ def fixed_identity():
     sys.exit("The fixed distribution certificate is not active in this team (expired or revoked?)")
 
 
-def bundle_resource(identifier: str) -> str:
+def bundle_resource(identifier: str, platform: str = "IOS") -> str:
     """The App Store Connect id of a bundle ID, registering it when it is new."""
     bundles = call("GET", f"/bundleIds?filter[identifier]={identifier}&limit=200")["data"]
     match = [b for b in bundles if b["attributes"]["identifier"] == identifier]
     if match:
-        return match[0]["id"]
-    created = call("POST", "/bundleIds", {
+        bundle = match[0]["id"]
+    else:
+        bundle = call("POST", "/bundleIds", {
+            "data": {
+                "type": "bundleIds",
+                "attributes": {"identifier": identifier, "name": f"Gunce {identifier.rsplit('.', 1)[-1]}", "platform": platform},
+            },
+        })["data"]["id"]
+        print(f"Registered bundle ID {identifier}.")
+    if platform == "MAC_OS":
+        ensure_sign_in_with_apple(bundle)
+    return bundle
+
+
+def ensure_sign_in_with_apple(bundle: str) -> None:
+    """The Mac app's own bundle ID gets the Sign in with Apple capability (as a primary app)."""
+    existing = call("GET", f"/bundleIds/{bundle}/bundleIdCapabilities")["data"]
+    if any(c["attributes"].get("capabilityType") == "APPLE_ID_AUTH" for c in existing):
+        return
+    call("POST", "/bundleIdCapabilities", {
         "data": {
-            "type": "bundleIds",
-            "attributes": {"identifier": identifier, "name": f"Gunce {identifier.rsplit('.', 1)[-1]}", "platform": "IOS"},
+            "type": "bundleIdCapabilities",
+            "attributes": {
+                "capabilityType": "APPLE_ID_AUTH",
+                "settings": [{"key": "APPLE_ID_AUTH_APP_CONSENT", "options": [{"key": "PRIMARY_APP_CONSENT"}]}],
+            },
+            "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle}}},
         },
-    })["data"]
-    print(f"Registered bundle ID {identifier}.")
-    return created["id"]
+    })
+    print("Enabled Sign in with Apple for the Mac bundle ID.")
 
 
 def revoke(out: str) -> None:
@@ -188,9 +230,19 @@ def revoke(out: str) -> None:
         state = json.load(f)
     for profile in state.get("profiles", {}).values():
         call("DELETE", f"/profiles/{profile['id']}")
-    if "certificate_id" in state:
-        call("DELETE", f"/certificates/{state['certificate_id']}")
-    print("Deleted the profiles" + (" and the short-lived certificate." if "certificate_id" in state else "."))
+    for key in ("certificate_id", "installer_certificate_id"):
+        if key in state:
+            call("DELETE", f"/certificates/{state[key]}")
+    revoked = [k for k in ("certificate_id", "installer_certificate_id") if k in state]
+    print("Deleted the profiles" + (f" and {len(revoked)} short-lived certificate(s)." if revoked else "."))
+
+
+def load_state(out: str) -> dict:
+    path = os.path.join(out, "state.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
 
 
 def save_state(out: str, state: dict) -> None:
