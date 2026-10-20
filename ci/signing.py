@@ -205,7 +205,7 @@ def bundle_resource(identifier: str, platform: str = "IOS") -> str:
 
 def ensure_sign_in_with_apple(bundle: str) -> None:
     """The Mac app's own bundle ID gets the Sign in with Apple capability (as a primary app)."""
-    existing = call("GET", f"/bundleIds/{bundle}/bundleIdCapabilities?limit=200")["data"]
+    existing = call("GET", f"/bundleIds/{bundle}/bundleIdCapabilities")["data"]
     if any(c["attributes"].get("capabilityType") == "APPLE_ID_AUTH" for c in existing):
         return
     call("POST", "/bundleIdCapabilities", {
