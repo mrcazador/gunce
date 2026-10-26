@@ -555,6 +555,14 @@ final class AppStore {
         }
     }
 
+    // MARK: - Diagnostics
+
+    /// The connection test in Settings.
+    func checkConnection() async -> [ConnectionCheck] {
+        guard let api else { return [ConnectionCheck(name: "Sunucu", ok: false, detail: "adres ayarlı değil")] }
+        return await api.checkConnection()
+    }
+
     // MARK: - Claude connector
 
     /// The MCP server address to paste into Claude.

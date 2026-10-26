@@ -111,7 +111,9 @@ extension APIClient {
                 }
                 // The code tells "no internet" (-1009) from "host unreachable" (-1004) or a dropped
                 // connection (-1005) when the person reports the error.
-                throw APIError(status: 0, code: "offline", message: code.map { "kod \($0.rawValue)" })
+                // The endpoint says which request stalled when the person reports it.
+                let what = "\(req.httpMethod ?? "GET") /\(req.url?.path.split(separator: "/").prefix(2).joined(separator: "/") ?? "")"
+                throw APIError(status: 0, code: "offline", message: [code.map { "kod \($0.rawValue)" }, what].compactMap { $0 }.joined(separator: " · "))
             }
         }
     }
@@ -121,6 +123,69 @@ extension APIClient {
         if neverSent.contains(code) { return true }
         let transient: Set<URLError.Code> = [.networkConnectionLost, .timedOut, .secureConnectionFailed]
         return transient.contains(code) && method != "POST"
+    }
+}
+
+/// One line of the connection test in Settings.
+struct ConnectionCheck: Identifiable {
+    let id = UUID()
+    let name: String
+    let ok: Bool
+    let detail: String
+}
+
+extension APIClient {
+    /// Runs the requests the app depends on, one by one, on the app's own connection and on a
+    /// fresh one, and reports time, HTTP version and status, so a stalled request can be named.
+    func checkConnection() async -> [ConnectionCheck] {
+        let since = JSONCoding.formatDate(.now)
+        let steps: [(String, String, [URLQueryItem], Bool)] = [
+            ("Sunucu", "health", [], false),
+            ("Hesap", "v1/me", [], true),
+            ("Eşitleme", "v1/sync", [URLQueryItem(name: "since", value: since)], true),
+        ]
+        var results: [ConnectionCheck] = []
+        for (name, path, query, authed) in steps {
+            results.append(await probe(name, path, query: query, authed: authed, session: session))
+        }
+        let fresh = URLSession(configuration: .ephemeral)
+        results.append(await probe("Yeni bağlantı", "v1/me", query: [], authed: true, session: fresh))
+        fresh.finishTasksAndInvalidate()
+        return results
+    }
+
+    private func probe(_ name: String, _ path: String, query: [URLQueryItem], authed: Bool, session: URLSession) async -> ConnectionCheck {
+        var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        if !query.isEmpty { components?.queryItems = query }
+        guard let url = components?.url else { return ConnectionCheck(name: name, ok: false, detail: "adres hatalı") }
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if authed, let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let metrics = MetricsCollector()
+        let started = Date.now
+        do {
+            let (_, response) = try await session.data(for: req, delegate: metrics)
+            let ms = Int(Date.now.timeIntervalSince(started) * 1000)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            return ConnectionCheck(
+                name: name,
+                ok: (200..<300).contains(status),
+                detail: "\(status) · \(ms) ms · \(metrics.protocolName)"
+            )
+        } catch {
+            let seconds = Int(Date.now.timeIntervalSince(started))
+            let code = (error as? URLError)?.code.rawValue ?? 0
+            return ConnectionCheck(name: name, ok: false, detail: "kod \(code) · \(seconds) sn · \(metrics.protocolName)")
+        }
+    }
+}
+
+/// Records which HTTP version a request used (h2, h3 or http/1.1).
+private final class MetricsCollector: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private(set) var protocolName = "?"
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        protocolName = metrics.transactionMetrics.last?.networkProtocolName ?? "?"
     }
 }
 

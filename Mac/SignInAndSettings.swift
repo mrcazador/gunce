@@ -126,6 +126,8 @@ struct MacSettingsView: View {
                     Text("Giriş yapılmadı").foregroundStyle(.secondary)
                 }
             }
+            ConnectionTestSection()
+
             Section {
                 LabeledContent("Sürüm", value: version)
             }

@@ -58,6 +58,8 @@ struct SettingsView: View {
                     }
                 }
 
+                ConnectionTestSection()
+
                 Section {
                     LabeledContent("Sürüm", value: version)
                 }
