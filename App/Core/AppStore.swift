@@ -25,6 +25,8 @@ final class AppStore {
     private(set) var tasks: [String: TaskItem] = [:]
     private(set) var events: [String: TaskEvent] = [:]
     private(set) var isSyncing = false
+    /// The last automatic sync could not reach the server (no internet, Wi-Fi still waking up).
+    private(set) var isOffline = false
 
     var parkRequest: ParkRequest? = nil
     var errorMessage: String? = nil
@@ -227,8 +229,13 @@ final class AppStore {
                 syncCursor = page.serverTime
                 more = page.hasMore
             }
+            isOffline = false
             saveSnapshot()
             tasksChanged()
+        } catch let error as APIError where error.code == "offline" {
+            // Sync runs on its own (every minute, on wake, after edits). A moment without a
+            // connection is not worth an alert; the cached tasks stay and the next sync catches up.
+            isOffline = true
         } catch {
             report(error)
         }

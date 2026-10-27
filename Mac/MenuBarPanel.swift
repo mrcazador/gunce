@@ -165,6 +165,11 @@ struct MenuBarPanel: View {
             }
             .keyboardShortcut("o")
             Spacer()
+            if store.isOffline {
+                Label("Çevrimdışı", systemImage: "wifi.slash")
+                    .foregroundStyle(.secondary)
+                    .help("Sunucuya ulaşılamadı; bağlantı gelince kendiliğinden eşitlenir.")
+            }
             if store.isSyncing {
                 ProgressView()
                     .controlSize(.small)

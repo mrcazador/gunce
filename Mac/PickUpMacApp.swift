@@ -90,8 +90,12 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationC
         }
     }
 
+    /// Wi-Fi needs a few seconds after wake; syncing at once only fails with -1009.
     @objc private func didWake() {
-        refreshNow()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            await self.store?.refresh()
+        }
     }
 
     private func refreshNow() {
