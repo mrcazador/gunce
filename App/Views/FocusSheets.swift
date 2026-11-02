@@ -130,6 +130,7 @@ struct ReviewSheet: View {
                         .foregroundStyle(.secondary)
                     Text(note)
                         .font(.system(.title3, design: .serif).italic())
+                                    .fontDesign(.serif)
                         .foregroundStyle(.secondary)
                 }
             }

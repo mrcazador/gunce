@@ -39,6 +39,7 @@ struct NowView: View {
                             if let note = waiting.parkNote, !note.isEmpty {
                                 Text(note)
                                     .font(.system(.title2, design: .serif).italic())
+                                    .fontDesign(.serif)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .accessibilityLabel("Kaldığın yer: \(note)")
                             }
@@ -323,6 +324,7 @@ private struct ActiveTaskCard: View {
                         .accessibilityHidden(true)
                     Text(note)
                         .font(.system(.title3, design: .serif).italic())
+                                    .fontDesign(.serif)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("Kaldığın yer: \(note)")
                 }
