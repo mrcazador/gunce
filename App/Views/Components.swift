@@ -170,7 +170,7 @@ struct TaskRow: View {
         case .active: "Aktif"
         case .parked: "Duruyor"
         case .inbox: "Gelen kutusu"
-        case .done: "Teslim edildi"
+        case .done: "Bitti"
         case .archived: "Arşivde"
         }
     }
@@ -185,12 +185,12 @@ struct TaskSwipeActions: ViewModifier {
         content
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if task.parentId == nil, task.status == .inbox || task.status == .parked {
-                    Button(task.status == .parked ? "Şantiyeye dön" : "Temeli at", systemImage: "play") {
+                    Button(task.status == .parked ? "Devam et" : "Başla", systemImage: "play") {
                         store.requestStart(task)
                     }
                     .tint(Color.primary)
                 } else if task.status == .active {
-                    Button("İnşaatı durdur", systemImage: "pause") {
+                    Button("Ara ver", systemImage: "pause") {
                         store.requestPark(task)
                     }
                     .tint(.gray)
@@ -199,7 +199,7 @@ struct TaskSwipeActions: ViewModifier {
             // No full swipe: finishing a task (and its steps) takes a deliberate tap.
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if task.status.isOpen {
-                    Button("Teslim et", systemImage: "checkmark") {
+                    Button("Bitti", systemImage: "checkmark") {
                         Task { await store.complete(task) }
                     }
                     .tint(.green)

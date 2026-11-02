@@ -47,6 +47,17 @@ and fix it.
 - Every state change writes a row to `task_events` (the "İz" history): created, started,
   parked (with note and reason), resumed, done.
 - Park reasons: `waiting` (Yanıt bekliyorum), `need_info` (Bilgi lazım), `later` (Sonra devam).
+- **The app must not make people decide.** It is built for people with weak working memory who
+  leave work half-done. Every new choice costs them; prefer defaults and asking later:
+  - "Ara ver" asks for one line only; reason and reminder sit under a closed "Neden ve
+    hatırlatma". An empty note becomes "Sıradaki adım: …".
+  - At most 5 paused tasks (`AppStore.pausedLimit`). A new break or switch past that opens a
+    sheet to finish or let go ("Bırak" = archive) one first; then it goes ahead by itself.
+  - A daily 09:30 "Günün toparlanması" notification and the "Toparla" row on Şimdi go through
+    paused tasks one by one: Devam et / Yarına / Bırak.
+  - Size is asked after finishing (in the "bitti · Geri al" banner), not up front; area is
+    guessed from earlier tasks' titles when not picked.
+  - With nothing in hand, Şimdi shows the last paused task and its note, big.
 - Reminders are app notifications (Said no longer uses Apple Reminders). Calendar sync is both
   ways: timed tasks go to a dedicated "PickUp" calendar, and calendar events appear in "Bugün"
   (under Şimdi, with the full day and week behind "Haftayı gör").
@@ -86,8 +97,9 @@ Design source: the "Günce — ekran taslakları" canvas. Follow Apple HIG; use 
   Nothing else uses serif.
 - One prominent (filled) button per screen. Targets ≥ 44 pt. Dynamic Type, Dark Mode,
   Reduce Motion and VoiceOver labels are required, not optional.
-- UI copy is Turkish, sentence case, verbs that say what happens, in the construction language:
-  "İnşaatı durdur" (park), "Şantiyeye dön" (resume), "Teslim et" (done). Sheet dismiss stays "Bitti".
+- UI copy is Turkish, sentence case, plain verbs that say what happens: "Başla", "Ara ver" (park),
+  "Devam et" (resume), "Bitti" (done). The construction language lives only in Şehir's story and
+  texts, never on buttons.
 
 ## Security rules (public repo)
 

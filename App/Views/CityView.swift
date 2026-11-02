@@ -258,16 +258,16 @@ private struct CityStorySheet: View {
                     Text("Şehrin hikâyesi")
                 } footer: {
                     if let next = city.level.next {
-                        Text("\(next.title) için \(next.threshold - city.finished) bina daha teslim et.")
+                        Text("\(next.title) için \(next.threshold - city.finished) iş daha bitir.")
                     }
                 }
 
                 Section("Nasıl büyür?") {
                     Label("Her iş bir bina, her tamamlanan adım bir kat.", systemImage: "building.2")
                     Label("3 gün adım atılmazsa vinç durur, 7 günde şantiye terk edilir. Bir adım onu yeniden başlatır.", systemImage: "pause.circle")
-                    Label("Büyüklük (Ufak, Orta, Büyük) teslim edilen binanın ne kadar gösterişli olacağını seçer.", systemImage: "square.stack.3d.up")
-                    Label("Uzun bekleyip sonunda teslim ettiğin iş anıt yapı olur.", systemImage: "star")
-                    Label("Teslimden iki gün sonra binaya taşınılır, ışıkları yanar.", systemImage: "lightbulb")
+                    Label("Büyüklük (Ufak, Orta, Büyük) biten binanın ne kadar gösterişli olacağını seçer.", systemImage: "square.stack.3d.up")
+                    Label("Uzun bekleyip sonunda bitirdiğin iş anıt yapı olur.", systemImage: "star")
+                    Label("Bittikten iki gün sonra binaya taşınılır, ışıkları yanar.", systemImage: "lightbulb")
                 }
                 .font(.subheadline)
 
@@ -931,7 +931,7 @@ private struct CityBuildingSheet: View {
                     ActionRow {
                         switch task.status {
                         case .active:
-                            ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
+                            ActionButton(title: "Ara ver", symbol: "pause.fill", prominent: true) {
                                 dismiss()
                                 Task {
                                     try? await Task.sleep(for: .milliseconds(350))
@@ -939,7 +939,7 @@ private struct CityBuildingSheet: View {
                                 }
                             }
                         default:
-                            ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Temeli at", symbol: "play.fill", prominent: true) {
+                            ActionButton(title: task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
                                 dismiss()
                                 Task {
                                     try? await Task.sleep(for: .milliseconds(350))
@@ -947,7 +947,7 @@ private struct CityBuildingSheet: View {
                                 }
                             }
                         }
-                        ActionButton(title: "Teslim et", symbol: "checkmark") {
+                        ActionButton(title: "Bitti", symbol: "checkmark") {
                             Task { await store.complete(task) }
                         }
                     }
@@ -1019,7 +1019,7 @@ enum CityText {
                 ? "\(b.idleDays) gündür adım tamamlanmadı; terk edilmiş"
                 : "\(b.idleDays) gündür el sürülmedi; terk edilmiş"
         case .finished:
-            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra teslim ettin." : "\(b.size.title) bina · teslim edildi"
+            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra bitirdin." : "\(b.size.title) bina · bitti"
         }
     }
 

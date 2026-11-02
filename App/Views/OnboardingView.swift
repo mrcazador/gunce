@@ -30,13 +30,13 @@ struct OnboardingView: View {
         Page(
             image: "city-is-kat2",
             title: "Bölününce kaldığın yeri yaz",
-            body: "Araya bir şey girerse “İnşaatı durdur”a bas ve tek cümleyle nerede kaldığını yaz. “Şantiyeye dön” dediğinde bu not seni karşılar.",
+            body: "Araya bir şey girerse “Ara ver”e bas ve tek cümleyle nerede kaldığını yaz. “Devam et” dediğinde bu not seni karşılar.",
             note: "Grafikler hazır, metinler kaldı."
         ),
         Page(
             image: "city-yatirim-final2",
             title: "Şehrin büyüsün",
-            body: "“Teslim et” dediğin her iş şehrinde bir bina olur. 3 gün adım atılmayan inşaat durur; bitirdikçe şehrin Site, Mahalle ve Şehir olur."
+            body: "Bitirdiğin her iş şehrinde bir bina olur. 3 gün adım atılmayan inşaat durur; bitirdikçe şehrin Site, Mahalle ve Şehir olur."
         ),
     ]
 

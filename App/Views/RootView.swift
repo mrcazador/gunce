@@ -64,6 +64,12 @@ struct MainTabs: View {
         .sheet(item: $store.captureRequest) { request in
             CaptureSheet(request: request)
         }
+        .sheet(item: $store.limitRequest) { request in
+            LimitSheet(request: request)
+        }
+        .sheet(isPresented: $store.reviewRequested) {
+            ReviewSheet()
+        }
         .sheet(item: $store.parkRequest) { request in
             ParkSheet(request: request)
         }
@@ -126,31 +132,56 @@ struct MainTabs: View {
     }
 }
 
-/// "Teslim edildi · Geri al" for a few seconds after finishing a task.
+/// "Bitti · Geri al" for a few seconds after finishing a task.
 private struct UndoBanner: View {
     @Environment(AppStore.self) private var store
     let undo: CompletionUndo
 
+    @State private var picked: TaskSize?
+
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark.seal.fill")
-                .foregroundStyle(Color.themeSage)
-                .accessibilityHidden(true)
-            Text("“\(undo.task.title)” teslim edildi")
-                .font(.subheadline)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            Button("Geri al") {
-                Task { await store.undoCompletion() }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(Color.themeSage)
+                    .accessibilityHidden(true)
+                Text("“\(undo.task.title)” bitti")
+                    .font(.subheadline)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Button("Geri al") {
+                    Task { await store.undoCompletion() }
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(minHeight: 44)
             }
-            .font(.subheadline.weight(.semibold))
-            .frame(minHeight: 44)
+            // Size is asked once the work is done, when it is easy to judge; it picks how grand
+            // the building is. Skipping keeps it Orta.
+            HStack(spacing: 8) {
+                Text("Ne kadar büyüktü?")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(TaskSize.allCases) { size in
+                    Button(size.title) {
+                        picked = size
+                        if let task = store.tasks[undo.task.id] {
+                            Task { await store.edit(task) { $0.priority = size.rawValue } }
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .tint(picked == size ? Color.themeBrick : Color.secondary)
+                    .frame(minHeight: 44)
+                }
+            }
         }
         .padding(.horizontal, 16)
-        .background(.regularMaterial, in: Capsule())
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
         .padding(.horizontal, 16)
         .task(id: undo.id) {
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(8))
             if store.lastCompletion?.id == undo.id { store.lastCompletion = nil }
         }
     }

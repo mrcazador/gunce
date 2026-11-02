@@ -8,12 +8,23 @@ struct CaptureRequest: Identifiable {
     var dueAt: Date? = nil
 }
 
-/// The last "Teslim et", offered back for a few seconds.
+/// The last "Bitti", offered back for a few seconds.
 struct CompletionUndo: Identifiable {
     let id = UUID()
     let task: TaskItem
     let stepIDs: [String]
     let wasActive: Bool
+}
+
+/// The paused-work limit was hit; once a slot is free, `then` goes ahead.
+struct LimitRequest: Identifiable {
+    enum Then {
+        case park(TaskItem)
+        case start(TaskItem)
+    }
+
+    let id = UUID()
+    let then: Then
 }
 
 /// A request to park a task, optionally starting another one right after (a switch).
@@ -37,6 +48,10 @@ final class AppStore {
     private(set) var isOffline = false
 
     var parkRequest: ParkRequest? = nil
+    /// Shown instead of a break when the paused-work limit is reached.
+    var limitRequest: LimitRequest? = nil
+    /// The daily two-minute tidy-up of paused work ("Toparla").
+    var reviewRequested = false
     var errorMessage: String? = nil
     /// The quick-capture sheet, optionally with a date already set (from the calendar).
     var captureRequest: CaptureRequest? = nil
@@ -291,16 +306,18 @@ final class AppStore {
     func capture(_ title: String, areaId: String? = nil, parentId: String? = nil, dueAt: Date? = nil) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // No area picked: guess it from earlier tasks, so most captures need no choice.
+        let area = areaId ?? (parentId == nil ? guessArea(for: trimmed) : nil)
         let id = UUID().uuidString.lowercased()
         // New steps go to the end of their task's list.
         let sort = parentId.map { (subtasks(of: $0).map(\.sort).max() ?? -1) + 1 } ?? 0
         var body: [String: Any] = ["id": id, "title": trimmed, "sort": sort]
-        if let areaId { body["area_id"] = areaId }
+        if let area { body["area_id"] = area }
         if let parentId { body["parent_id"] = parentId }
         if let dueAt { body["due_at"] = JSONCoding.formatDate(dueAt) }
         captures += 1
         await optimistic(PendingRequest("POST", "v1/tasks", body: body)) {
-            localInsert(id: id, title: trimmed, areaId: areaId, parentId: parentId)
+            localInsert(id: id, title: trimmed, areaId: area, parentId: parentId)
             localSet(id) {
                 $0.sort = sort
                 $0.dueAt = dueAt
@@ -309,8 +326,40 @@ final class AppStore {
     }
 
     /// Starts a task. If another task is active, asks for a "nerede kaldın?" note first.
+    /// The area of earlier tasks that share the most words (four letters or more) with a new
+    /// title, if any; nil when nothing matches, so a wrong guess is rare and easy to change.
+    func guessArea(for title: String) -> String? {
+        let locale = Locale(identifier: "tr")
+        func words(_ text: String) -> Set<String> {
+            Set(text.lowercased(with: locale)
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { $0.count >= 4 })
+        }
+        let wanted = words(title)
+        guard !wanted.isEmpty else { return nil }
+        var votes: [String: Int] = [:]
+        for task in tasks.values where task.parentId == nil && task.deletedAt == nil {
+            guard let areaId = task.areaId, area(areaId) != nil else { continue }
+            let shared = wanted.intersection(words(task.title)).count
+            if shared > 0 { votes[areaId, default: 0] += shared }
+        }
+        return votes.max { $0.value < $1.value }?.key
+    }
+
+    /// At most this many tasks can be paused at once. A new break needs one of them finished
+    /// or let go first: half-done work cannot pile up.
+    static let pausedLimit = 5
+
+    private var atPausedLimit: Bool { parkedTasks.count >= Self.pausedLimit }
+
     func requestStart(_ task: TaskItem) {
         if let current = activeTask, current.id != task.id {
+            // Resuming a paused task frees its slot, so only a new one can hit the limit.
+            if atPausedLimit, task.status != .parked {
+                limitRequest = LimitRequest(then: .start(task))
+                return
+            }
             parkRequest = ParkRequest(task: current, next: task)
         } else {
             Task { await start(task, previousNote: nil, previousReason: nil) }
@@ -318,7 +367,27 @@ final class AppStore {
     }
 
     func requestPark(_ task: TaskItem) {
+        if atPausedLimit {
+            limitRequest = LimitRequest(then: .park(task))
+            return
+        }
         parkRequest = ParkRequest(task: task, next: nil)
+    }
+
+    /// Picks up what was waiting for a free slot.
+    func continueAfterLimit(_ request: LimitRequest) {
+        limitRequest = nil
+        switch request.then {
+        case .park(let task):
+            if let fresh = tasks[task.id], fresh.status == .active { requestPark(fresh) }
+        case .start(let task):
+            if let fresh = tasks[task.id], fresh.status.isOpen { requestStart(fresh) }
+        }
+    }
+
+    /// Lets a paused task go: it leaves the list (archived, still in Görevler's history).
+    func letGo(_ task: TaskItem) async {
+        await archive(task)
     }
 
     func start(_ task: TaskItem, previousNote: String?, previousReason: ParkReason?) async {
@@ -377,7 +446,7 @@ final class AppStore {
     /// The last finished task, offered back for a few seconds.
     var lastCompletion: CompletionUndo?
 
-    /// Takes the last "Teslim et" back: the task and the steps it closed open again, and a
+    /// Takes the last "Bitti" back: the task and the steps it closed open again, and a
     /// task that was in hand goes back in hand.
     func undoCompletion() async {
         guard let undo = lastCompletion else { return }
@@ -571,15 +640,18 @@ final class AppStore {
                 items.append(.init(taskID: task.id, title: task.title, body: body, date: due, isDue: true))
             }
         }
-        // One calm nudge a day, at 09:30, for the site that has waited longest for a step.
-        // It is rebuilt after every change, so it always names today's oldest stalled site.
-        if let oldest = city().stalled.first, let task = tasks[oldest.id], task.status != .active {
+        // One calm nudge a day, at 09:30: the two-minute tidy-up of paused work. Rebuilt after
+        // every change, so it always counts today's paused tasks; tapping it opens "Toparla".
+        let paused = parkedTasks
+        if let oldest = paused.first {
             let calendar = Calendar.current
             var when = calendar.date(bySettingHour: 9, minute: 30, second: 0, of: .now) ?? .now
             if when <= .now { when = calendar.date(byAdding: .day, value: 1, to: when) ?? when }
-            var body = "\(oldest.idleDays) gündür adım atılmadı."
-            if let note = task.parkNote, !note.isEmpty { body += " Kaldığın yer: \(note)" }
-            items.append(.init(taskID: task.id, title: task.title, body: body, date: when, isDue: false, isNudge: true))
+            let body = paused.count == 1
+                ? "“\(oldest.title)” seni bekliyor. 2 dakikada toparla."
+                : "\(paused.count) yarım iş seni bekliyor; en eskisi “\(oldest.title)”. 2 dakikada toparla."
+            items.append(.init(taskID: Self.reviewNotificationID, title: "Günün toparlanması", body: body,
+                               date: when, isDue: false, isNudge: true))
         }
         return items
     }
@@ -593,7 +665,14 @@ final class AppStore {
     }
 
     /// Handles a notification action (or a plain tap) for a task.
+    /// The task id carried by the daily tidy-up notification.
+    static let reviewNotificationID = "review"
+
     func handleNotification(action: String, taskID: String) async {
+        if taskID == Self.reviewNotificationID {
+            reviewRequested = true
+            return
+        }
         guard let task = tasks[taskID] else { return }
         switch action {
         case Reminders.resumeAction:

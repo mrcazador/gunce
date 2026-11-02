@@ -100,13 +100,6 @@ private struct TaskDetailForm: View {
                             Text(repeats.title).tag(Optional(repeats))
                         }
                     }
-                    if task.repeats == nil {
-                        Picker("Büyüklük", selection: sizeBinding) {
-                            ForEach(TaskSize.allCases) { size in
-                                Text(size.title).tag(size)
-                            }
-                        }
-                    }
                 }
                 Toggle("Tarih", isOn: dateToggle(\.dueAt))
                 if task.dueAt != nil {
@@ -119,9 +112,7 @@ private struct TaskDetailForm: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if task.repeats != nil {
-                        Text("Tekrarlayan iş teslim edilince kaybolmaz, bir sonraki gün (ya da hafta) yine gelir. Bina olmaz; her yapışında semtine bir çiçek, ağaç ya da bank ekler.")
-                    } else if task.parentId == nil {
-                        Text("Büyüklük, iş bittiğinde şehirde nasıl bir bina olacağını seçer: büyük işler daha gösterişli olur.")
+                        Text("Tekrarlayan iş bitince kaybolmaz, bir sonraki gün (ya da hafta) yine gelir. Bina olmaz; her yapışında semtine bir çiçek, ağaç ya da bank ekler.")
                     }
                     if task.dueAt != nil, store.calendarSyncEnabled {
                         Text("Bu görev PickUp takviminde de görünür.")
@@ -144,7 +135,7 @@ private struct TaskDetailForm: View {
             } header: {
                 Text("İz · geçmiş")
             } footer: {
-                Text("Başlattığın, durdurduğun ve teslim ettiğin her an burada kalır. Not, kaldığın yeri değiştirmez.")
+                Text("Başladığın, ara verdiğin ve bitirdiğin her an burada kalır. Not, kaldığın yeri değiştirmez.")
             }
         }
         .themedBackground()
@@ -277,13 +268,6 @@ private struct TaskDetailForm: View {
         )
     }
 
-    private var sizeBinding: Binding<TaskSize> {
-        Binding(
-            get: { task.size },
-            set: { newValue in Task { await store.edit(task) { $0.priority = newValue.rawValue } } }
-        )
-    }
-
     private func dateToggle(_ key: WritableKeyPath<TaskItem, Date?>) -> Binding<Bool> {
         Binding(
             get: { task[keyPath: key] != nil },
@@ -318,12 +302,12 @@ private struct TaskDetailForm: View {
             switch task.status {
             case .inbox, .parked:
                 if task.parentId == nil {
-                    ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Temeli at", symbol: "play.fill", prominent: true) {
+                    ActionButton(title: task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
                         store.requestStart(task)
                     }
                 }
             case .active:
-                ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
+                ActionButton(title: "Ara ver", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
                 }
             case .done, .archived:
@@ -332,7 +316,7 @@ private struct TaskDetailForm: View {
                 }
             }
             if task.status.isOpen {
-                ActionButton(title: "Teslim et", symbol: "checkmark", prominent: task.parentId != nil) {
+                ActionButton(title: "Bitti", symbol: "checkmark", prominent: task.parentId != nil) {
                     Task { await store.complete(task) }
                 }
             }

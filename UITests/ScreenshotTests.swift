@@ -65,7 +65,7 @@ final class ScreenshotTests: XCTestCase {
         snap("\(prefix)-02-simdi-scrolled")
         app.swipeDown()
 
-        if tap(app.buttons["İnşaatı durdur"].firstMatch) {
+        if tap(app.buttons["Ara ver"].firstMatch) {
             snap("\(prefix)-03-park-sheet")
             tap(app.buttons["Vazgeç"].firstMatch)
         }

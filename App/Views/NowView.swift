@@ -27,18 +27,23 @@ struct NowView: View {
                 Section {
                     if let task = store.activeTask {
                         ActiveTaskCard(task: task)
-                    } else if let waiting = store.parkedTasks.first {
-                        // Nothing in hand: the site waiting longest is the obvious next step.
+                    } else if let waiting = store.parkedTasks.max(by: { ($0.parkedAt ?? .distantPast) < ($1.parkedAt ?? .distantPast) }) {
+                        // Nothing in hand: what you were just doing, and where you left it, comes
+                        // first and big, so getting back in takes no remembering.
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Elinde iş yok. En uzun bekleyen şantiye:")
+                            Text("Geçen sefer")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             Text(waiting.title)
                                 .font(.title3.weight(.semibold))
                             if let note = waiting.parkNote, !note.isEmpty {
-                                ParkNoteText(note: note)
+                                Text(note)
+                                    .font(.system(.title2, design: .serif).italic())
+                                    .fontDesign(.serif)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityLabel("Kaldığın yer: \(note)")
                             }
-                            ActionButton(title: "Şantiyeye dön", symbol: "play.fill", prominent: true) {
+                            ActionButton(title: "Devam et", symbol: "play.fill", prominent: true) {
                                 store.requestStart(waiting)
                             }
                         }
@@ -47,7 +52,7 @@ struct NowView: View {
                         ContentUnavailableView(
                             "Elinde iş yok",
                             systemImage: "cup.and.saucer",
-                            description: Text("Aklına geleni aşağıdaki çubuğa yaz, sonra “Temeli at” ile ele al.")
+                            description: Text("Aklına geleni aşağıdaki çubuğa yaz, sonra “Başla” ile ele al.")
                         )
                     }
                 }
@@ -68,7 +73,7 @@ struct NowView: View {
                             HStack(alignment: .firstTextBaseline, spacing: 12) {
                                 TaskRow(task: task)
                                 Spacer(minLength: 0)
-                                Button("Temeli at") { store.requestStart(task) }
+                                Button("Başla") { store.requestStart(task) }
                                     .buttonStyle(.bordered)
                                     .buttonBorderShape(.capsule)
                                     .frame(minHeight: 44)
@@ -159,6 +164,14 @@ private struct TodaySection: View {
                     }
                     .font(.subheadline)
                 }
+            }
+            if store.parkedTasks.count >= 2 {
+                Button {
+                    store.reviewRequested = true
+                } label: {
+                    Label("Toparla · \(store.parkedTasks.count)/\(AppStore.pausedLimit) yarım iş", systemImage: "tray.full")
+                }
+                .accessibilityHint("Yarım işlerini tek tek gözden geçirirsin: devam, yarına ya da bırak")
             }
             NavigationLink {
                 TodayView(startsInWeek: true)
@@ -302,16 +315,22 @@ private struct ActiveTaskCard: View {
 
             let progress = store.progress(of: task.id)
             let note = task.parkNote ?? ""
-            // Resumed from park: where you left off comes first.
+            // Resumed from a break: where you left off comes first, big enough to read at a glance.
             if !note.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Kaldığın yer")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
-                    ParkNoteText(note: note)
+                    Text(note)
+                        .font(.system(.title3, design: .serif).italic())
+                                    .fontDesign(.serif)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Kaldığın yer: \(note)")
                 }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.themeBackground, in: RoundedRectangle(cornerRadius: 14))
             }
             if let step = store.nextStep(of: task.id) {
                 NextStepRow(step: step, done: progress.done, total: progress.total)
@@ -323,7 +342,7 @@ private struct ActiveTaskCard: View {
                     Text(next)
                 }
             } else if progress.total > 0 {
-                Label("Tüm katlar çıktı; teslim edebilirsin", systemImage: "checkmark.seal")
+                Label("Tüm adımlar bitti; işi bitirebilirsin", systemImage: "checkmark.seal")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -331,10 +350,10 @@ private struct ActiveTaskCard: View {
             FirstStepField(task: task, isFirst: progress.total == 0)
 
             ActionRow {
-                ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
+                ActionButton(title: "Ara ver", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
                 }
-                ActionButton(title: "Teslim et", symbol: "checkmark") {
+                ActionButton(title: "Bitti", symbol: "checkmark") {
                     Task { await store.complete(task) }
                 }
             }
@@ -382,7 +401,7 @@ private struct ParkedRow: View {
     let task: TaskItem
 
     private var resumeButton: some View {
-        Button("Şantiyeye dön") {
+        Button("Devam et") {
             store.requestStart(task)
         }
         .buttonStyle(.bordered)
@@ -426,14 +445,14 @@ private struct ParkedRow: View {
                 .opacity(0)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button("Şantiyeye dön", systemImage: "play") {
+            Button("Devam et", systemImage: "play") {
                 store.requestStart(task)
             }
             .tint(Color.primary)
         }
         .contextMenu {
-            Button("Şantiyeye dön", systemImage: "play") { store.requestStart(task) }
-            Button("Teslim et", systemImage: "checkmark") {
+            Button("Devam et", systemImage: "play") { store.requestStart(task) }
+            Button("Bitti", systemImage: "checkmark") {
                 Task { await store.complete(task) }
             }
         }
