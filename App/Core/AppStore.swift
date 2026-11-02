@@ -400,6 +400,7 @@ final class AppStore {
         if a.dueAt != b.dueAt { fields["due_at"] = JSONCoding.value(b.dueAt) }
         if a.remindAt != b.remindAt { fields["remind_at"] = JSONCoding.value(b.remindAt) }
         if a.sort != b.sort { fields["sort"] = b.sort }
+        if a.priority != b.priority { fields["priority"] = b.priority ?? TaskSize.medium.rawValue }
         if a.calendarEventId != b.calendarEventId { fields["calendar_event_id"] = JSONCoding.value(b.calendarEventId) }
         return fields
     }
@@ -774,9 +775,23 @@ final class AppStore {
             task("t7", "Banka ekstresini kontrol et", area: "a-yatirim", status: .done),
             task("s1", "Taslak slaytlar", area: "a-is", status: .done, parent: "t1"),
             task("s2", "Rakamları finansla doğrula", area: "a-is", status: .inbox, parent: "t1"),
+            // The city: a site stalled for a week, finished work, one of them a landmark.
+            task("t8", "Bisiklet bakımını yaptır", area: "a-spor", status: .parked,
+                 note: "Fren balatası siparişte.", reason: .waiting, parked: ago(60 * 24 * 9)),
+            task("t9", "Kütüphane üyeliğini yenile", area: "a-hayat", status: .parked,
+                 note: "Formun ikinci sayfasında kaldım.", reason: .later, parked: ago(60 * 24 * 4)),
+            task("t10", "Vergi beyannamesini gönder", area: "a-yatirim", status: .done),
+            task("t11", "Takım toplantısı notlarını paylaş", area: "a-is", status: .done),
+            task("t12", "Balkon saksılarını değiştir", area: "a-hayat", status: .done),
         ]
         tasks = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
         tasks["s2"]?.sort = 1
+        // Finished a while ago: moved in (iskan) in the city.
+        for id in ["t11", "t12"] { tasks[id]?.completedAt = ago(60 * 24 * 5) }
+        // Sizes: the city mixes small, medium and grand buildings.
+        for (id, size) in [("t1", 3), ("t3", 3), ("t10", 3), ("t4", 1), ("t7", 1), ("t9", 1), ("t11", 1)] {
+            tasks[id]?.priority = size
+        }
         let history: [(String, String, String?, ParkReason?, Int?, Date)] = [
             ("e1", "created", nil, nil, nil, made),
             ("e2", "started", nil, nil, nil, ago(60 * 26)),
@@ -786,6 +801,11 @@ final class AppStore {
         for e in history {
             events[e.0] = TaskEvent(id: e.0, taskId: "t1", kind: e.1, note: e.2, reason: e.3,
                                     durationSeconds: e.4, source: "app", occurredAt: e.5)
+        }
+        // Parked for twelve days, then finished: a landmark in the city.
+        for (id, kind, when) in [("e5", "parked", ago(60 * 24 * 14)), ("e6", "resumed", ago(60 * 24 * 2)), ("e7", "done", ago(60 * 24))] {
+            events[id] = TaskEvent(id: id, taskId: "t10", kind: kind, note: nil, reason: nil,
+                                   durationSeconds: nil, source: "app", occurredAt: when)
         }
     }
 

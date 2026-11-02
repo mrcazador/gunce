@@ -76,6 +76,13 @@ private struct TaskDetailForm: View {
                         Label(area.name, systemImage: area.symbol).tag(Optional(area.id))
                     }
                 }
+                if task.parentId == nil {
+                    Picker("Büyüklük", selection: sizeBinding) {
+                        ForEach(TaskSize.allCases) { size in
+                            Text(size.title).tag(size)
+                        }
+                    }
+                }
                 Toggle("Tarih", isOn: dateToggle(\.dueAt))
                 if task.dueAt != nil {
                     DatePicker("Ne zaman", selection: dateBinding(\.dueAt))
@@ -87,6 +94,8 @@ private struct TaskDetailForm: View {
             } footer: {
                 if task.dueAt != nil, store.calendarSyncEnabled {
                     Text("Bu görev PickUp takviminde de görünür.")
+                } else if task.parentId == nil {
+                    Text("Büyük işler şehirde daha gösterişli binalar olur.")
                 }
             }
 
@@ -104,6 +113,7 @@ private struct TaskDetailForm: View {
                 }
             }
         }
+        .themedBackground()
         .navigationTitle(task.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -227,6 +237,13 @@ private struct TaskDetailForm: View {
         )
     }
 
+    private var sizeBinding: Binding<TaskSize> {
+        Binding(
+            get: { task.size },
+            set: { newValue in Task { await store.edit(task) { $0.priority = newValue.rawValue } } }
+        )
+    }
+
     private func dateToggle(_ key: WritableKeyPath<TaskItem, Date?>) -> Binding<Bool> {
         Binding(
             get: { task[keyPath: key] != nil },
@@ -261,12 +278,12 @@ private struct TaskDetailForm: View {
             switch task.status {
             case .inbox, .parked:
                 if task.parentId == nil {
-                    ActionButton(title: task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
+                    ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Başla", symbol: "play.fill", prominent: true) {
                         store.requestStart(task)
                     }
                 }
             case .active:
-                ActionButton(title: "Park et", symbol: "pause.fill", prominent: true) {
+                ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
                 }
             case .done, .archived:
@@ -275,7 +292,7 @@ private struct TaskDetailForm: View {
                 }
             }
             if task.status.isOpen {
-                ActionButton(title: "Bitti", symbol: "checkmark", prominent: task.parentId != nil) {
+                ActionButton(title: "Teslim et", symbol: "checkmark", prominent: task.parentId != nil) {
                     Task { await store.complete(task) }
                 }
             }

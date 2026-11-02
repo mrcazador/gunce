@@ -62,6 +62,25 @@ struct TaskItem: Codable, Identifiable, Hashable {
     var updatedAt: Date
     var completedAt: Date?
     var deletedAt: Date?
+    /// Task size, 1…3 (see `TaskSize`). Missing in snapshots saved before sizes existed.
+    var priority: Int? = nil
+
+    var size: TaskSize { TaskSize(rawValue: priority ?? 2) ?? .medium }
+}
+
+/// How big a task is: Ufak, Orta or Büyük. Decides how grand its building is in Şehir.
+enum TaskSize: Int, CaseIterable, Identifiable {
+    case small = 1, medium = 2, large = 3
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .small: "Ufak"
+        case .medium: "Orta"
+        case .large: "Büyük"
+        }
+    }
 }
 
 struct TaskEvent: Codable, Identifiable, Hashable {
@@ -78,9 +97,9 @@ struct TaskEvent: Codable, Identifiable, Hashable {
         switch kind {
         case "created": "Oluşturuldu"
         case "started": "Başlandı"
-        case "parked": "Park edildi"
-        case "resumed": "Devam edildi"
-        case "done": "Bitti"
+        case "parked": "İnşaat durdu"
+        case "resumed": "Şantiyeye dönüldü"
+        case "done": "Teslim edildi"
         case "reopened": "Yeniden açıldı"
         case "note": "Not"
         default: kind

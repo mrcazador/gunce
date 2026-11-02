@@ -17,6 +17,7 @@ struct SearchView: View {
                     ContentUnavailableView.search(text: query)
                 }
             }
+            .themedBackground()
             .navigationTitle("Ara")
             .navigationDestination(for: String.self) { id in
                 TaskDetailView(taskID: id)

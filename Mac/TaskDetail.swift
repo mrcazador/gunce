@@ -105,15 +105,15 @@ struct MacTaskDetail: View {
         HStack {
             switch task.status {
             case .inbox, .parked:
-                Button(task.status == .parked ? "Devam et" : "Başla", systemImage: "play.fill") {
+                Button(task.status == .parked ? "Şantiyeye dön" : "Başla", systemImage: "play.fill") {
                     store.requestStart(task)
                 }
                 .buttonStyle(.borderedProminent)
-                Button("Bitti", systemImage: "checkmark") { Task { await store.complete(task) } }
+                Button("Teslim et", systemImage: "checkmark") { Task { await store.complete(task) } }
             case .active:
-                Button("Park et", systemImage: "pause.fill") { store.requestPark(task) }
+                Button("İnşaatı durdur", systemImage: "pause.fill") { store.requestPark(task) }
                     .buttonStyle(.borderedProminent)
-                Button("Bitti", systemImage: "checkmark") { Task { await store.complete(task) } }
+                Button("Teslim et", systemImage: "checkmark") { Task { await store.complete(task) } }
             case .done, .archived:
                 Button("Yeniden aç", systemImage: "arrow.counterclockwise") {
                     Task { await store.reopen(task) }

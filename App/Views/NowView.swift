@@ -1,3 +1,4 @@
+import EventKit
 import SwiftUI
 
 /// "Şimdi": the active task and the places you left off.
@@ -21,6 +22,8 @@ struct NowView: View {
                     }
                 }
 
+                TodaySection()
+
                 if !store.parkedTasks.isEmpty {
                     Section("Kaldığın yerler") {
                         ForEach(store.parkedTasks) { task in
@@ -40,6 +43,7 @@ struct NowView: View {
                     }
                 }
             }
+            .themedBackground()
             .navigationTitle("Şimdi")
             .navigationDestination(for: String.self) { id in
                 TaskDetailView(taskID: id)
@@ -61,12 +65,131 @@ struct NowView: View {
     }
 }
 
+/// Today at a glance under the active task: what is due or reminding today and the day's
+/// calendar events, the oldest stalled site, and the full day and week one tap away.
+private struct TodaySection: View {
+    @Environment(AppStore.self) private var store
+    @State private var events: [EKEvent] = []
+
+    private struct Item: Identifiable {
+        let id: String
+        let time: Date
+        let allDay: Bool
+        let title: String
+        let source: String
+        let taskID: String?
+    }
+
+    var body: some View {
+        let items = todayItems
+        let stalled = store.city().stalled
+        Section {
+            if items.isEmpty {
+                Text("Bugün için planlanmış bir şey yok.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(items.prefix(4)) { item in
+                if let id = item.taskID {
+                    NavigationLink(value: id) { row(item) }
+                } else {
+                    row(item)
+                }
+            }
+            if let oldest = stalled.first {
+                NavigationLink(value: oldest.id) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(stalled.count) açık inşaat duruyor")
+                            Text("En eskisi: \(oldest.title), \(oldest.idleDays) gün")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "pause.circle")
+                    }
+                    .font(.subheadline)
+                }
+            }
+            NavigationLink {
+                TodayView()
+            } label: {
+                Label("Haftayı gör", systemImage: "calendar")
+            }
+        } header: {
+            Text("Bugün")
+        }
+        .task { load() }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in load() }
+        .onChange(of: store.calendarSyncEnabled) { load() }
+    }
+
+    private func row(_ item: Item) -> some View {
+        HStack(spacing: 12) {
+            Text(item.allDay ? "Tüm gün" : StartTime.clock(item.time))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 52, alignment: .leading)
+            Text(item.title)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            Text(item.source)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func load() {
+        guard !store.isDemo, store.calendarSyncEnabled else {
+            events = []
+            return
+        }
+        events = CalendarSync.shared.events(on: Calendar.current.startOfDay(for: .now))
+    }
+
+    /// Open tasks due or reminding today, then calendar events, in time order.
+    private var todayItems: [Item] {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: .now)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        var items: [Item] = []
+        for task in store.tasks.values where task.status.isOpen && task.deletedAt == nil {
+            let times = [task.dueAt, task.remindAt].compactMap { $0 }.filter { calendar.isDateInToday($0) }
+            if let first = times.min() {
+                items.append(Item(id: task.id, time: first, allDay: false, title: task.title, source: "Görev", taskID: task.id))
+            }
+        }
+        for event in events where event.startDate < end && event.endDate > start {
+            let allDay = event.isAllDay || event.startDate < start
+            items.append(Item(
+                id: "event-\(event.eventIdentifier ?? UUID().uuidString)",
+                time: allDay ? start : (event.startDate ?? start),
+                allDay: allDay,
+                title: event.title ?? "Etkinlik",
+                source: "Takvim",
+                taskID: nil
+            ))
+        }
+        return items.sorted { $0.time < $1.time }
+    }
+}
+
 private struct ActiveTaskCard: View {
     @Environment(AppStore.self) private var store
     let task: TaskItem
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // The task's building in Şehir, as it stands right now.
+            if let building = store.city().buildings.first(where: { $0.id == task.id }) {
+                CityBuildingImage(building: building, tileWidth: 96)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 180, alignment: .bottom)
+                    .accessibilityLabel(CityText.accessibility(building))
+            }
             HStack {
                 if let area = store.area(task.areaId) {
                     AreaLabel(area: area)
@@ -119,10 +242,10 @@ private struct ActiveTaskCard: View {
             }
 
             ActionRow {
-                ActionButton(title: "Park et", symbol: "pause.fill", prominent: true) {
+                ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
                 }
-                ActionButton(title: "Bitti", symbol: "checkmark") {
+                ActionButton(title: "Teslim et", symbol: "checkmark") {
                     Task { await store.complete(task) }
                 }
             }
@@ -169,7 +292,7 @@ private struct ParkedRow: View {
     let task: TaskItem
 
     private var resumeButton: some View {
-        Button("Devam et") {
+        Button("Şantiyeye dön") {
             store.requestStart(task)
         }
         .buttonStyle(.bordered)
@@ -213,14 +336,14 @@ private struct ParkedRow: View {
                 .opacity(0)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button("Devam et", systemImage: "play") {
+            Button("Şantiyeye dön", systemImage: "play") {
                 store.requestStart(task)
             }
             .tint(Color.primary)
         }
         .contextMenu {
-            Button("Devam et", systemImage: "play") { store.requestStart(task) }
-            Button("Bitti", systemImage: "checkmark") {
+            Button("Şantiyeye dön", systemImage: "play") { store.requestStart(task) }
+            Button("Teslim et", systemImage: "checkmark") {
                 Task { await store.complete(task) }
             }
         }
@@ -267,7 +390,7 @@ private struct NextStepRow: View {
                     .accessibilityLabel("\(total) adımın \(done) tanesi bitti")
             }
             ProgressView(value: Double(done), total: Double(max(total, 1)))
-                .tint(Color.primary)
+                .tint(Color.themeSage)
                 .accessibilityHidden(true)
             Button {
                 Task { await store.complete(step) }

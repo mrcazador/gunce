@@ -43,6 +43,7 @@ struct TasksView: View {
                     )
                 }
             }
+            .themedBackground()
             .navigationTitle("Görevler")
             .navigationDestination(for: String.self) { id in
                 TaskDetailView(taskID: id)

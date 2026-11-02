@@ -20,9 +20,9 @@ enum Reminders {
 
     static func registerCategories() {
         let actions = [
-            UNNotificationAction(identifier: resumeAction, title: "Devam et", options: [.foreground]),
+            UNNotificationAction(identifier: resumeAction, title: "Şantiyeye dön", options: [.foreground]),
             UNNotificationAction(identifier: snoozeAction, title: "1 saat ertele", options: []),
-            UNNotificationAction(identifier: doneAction, title: "Bitti", options: []),
+            UNNotificationAction(identifier: doneAction, title: "Teslim et", options: []),
         ]
         let taskCategory = UNNotificationCategory(
             identifier: category, actions: actions, intentIdentifiers: [], options: []

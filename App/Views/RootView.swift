@@ -13,7 +13,7 @@ struct RootView: View {
 }
 
 enum AppTab: Hashable {
-    case now, tasks, today, search
+    case now, tasks, city, search
 }
 
 struct MainTabs: View {
@@ -30,8 +30,8 @@ struct MainTabs: View {
             Tab("Görevler", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
             }
-            Tab("Bugün", systemImage: "calendar", value: AppTab.today) {
-                TodayView()
+            Tab("Şehir", systemImage: "building.2", value: AppTab.city) {
+                CityView()
             }
             Tab("Ara", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
                 SearchView()
@@ -40,6 +40,8 @@ struct MainTabs: View {
         .tabViewBottomAccessory {
             CaptureBar()
         }
+        // Soft, rounded type for the game-like look; park notes keep their serif italic.
+        .fontDesign(.rounded)
         .sheet(item: $store.captureRequest) { request in
             CaptureSheet(request: request)
         }

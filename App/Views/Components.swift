@@ -21,6 +21,49 @@ extension Area {
     }
 }
 
+/// The soft game palette: warm cream ground, brick for the one main action, sage for
+/// progress. Light and dark variants live in the asset catalog. Area colors stay for areas.
+extension Color {
+    static let themeBackground = Color("ThemeBackground")
+    static let themeBrick = Color("ThemeBrick")
+    static let themeBrickShadow = Color("ThemeBrickShadow")
+    static let themeOnBrick = Color("ThemeOnBrick")
+    static let themeCard = Color("ThemeCard")
+    static let themeCardShadow = Color("ThemeCardShadow")
+    static let themeSage = Color("ThemeSage")
+}
+
+extension View {
+    /// The warm cream ground behind lists and forms.
+    func themedBackground() -> some View {
+        scrollContentBackground(.hidden)
+            .background(Color.themeBackground)
+    }
+}
+
+/// A chunky, game-like button that sits on a solid ledge and presses down into it.
+struct ChunkyButtonStyle: ButtonStyle {
+    var prominent: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundStyle(prominent ? Color.themeOnBrick : Color.primary)
+            .padding(.horizontal, 12)
+            .background(prominent ? Color.themeBrick : Color.themeCard, in: RoundedRectangle(cornerRadius: 16))
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(prominent ? Color.themeBrickShadow : Color.themeCardShadow)
+                    .offset(y: pressed ? 1 : 4)
+            )
+            .offset(y: pressed ? 3 : 0)
+            .padding(.bottom, 4)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.12), value: pressed)
+    }
+}
+
 extension Font {
     /// The signature style for park notes. Nothing else uses serif.
     static let parkNote = Font.system(.body, design: .serif).italic()
@@ -43,6 +86,8 @@ struct ParkNoteText: View {
     var body: some View {
         Text(note)
             .font(.parkNote)
+            // The app uses rounded type; park notes keep their serif signature.
+            .fontDesign(.serif)
             .foregroundStyle(.secondary)
             .accessibilityLabel("Kaldığın yer: \(note)")
     }
@@ -118,9 +163,9 @@ struct TaskRow: View {
     private var statusTitle: String {
         switch task.status {
         case .active: "Aktif"
-        case .parked: "Park edildi"
+        case .parked: "Duruyor"
         case .inbox: "Gelen kutusu"
-        case .done: "Bitti"
+        case .done: "Teslim edildi"
         case .archived: "Arşivde"
         }
     }
@@ -135,12 +180,12 @@ struct TaskSwipeActions: ViewModifier {
         content
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if task.parentId == nil, task.status == .inbox || task.status == .parked {
-                    Button(task.status == .parked ? "Devam et" : "Başla", systemImage: "play") {
+                    Button(task.status == .parked ? "Şantiyeye dön" : "Başla", systemImage: "play") {
                         store.requestStart(task)
                     }
                     .tint(Color.primary)
                 } else if task.status == .active {
-                    Button("Park et", systemImage: "pause") {
+                    Button("İnşaatı durdur", systemImage: "pause") {
                         store.requestPark(task)
                     }
                     .tint(.gray)
@@ -148,7 +193,7 @@ struct TaskSwipeActions: ViewModifier {
             }
             .swipeActions(edge: .trailing) {
                 if task.status.isOpen {
-                    Button("Bitti", systemImage: "checkmark") {
+                    Button("Teslim et", systemImage: "checkmark") {
                         Task { await store.complete(task) }
                     }
                     .tint(.green)
@@ -175,24 +220,15 @@ struct ActionButton: View {
     let action: () -> Void
 
     var body: some View {
-        if prominent {
-            Button(action: action) {
-                label
-                    // The accent is near-black in light and near-white in dark, so the label
-                    // takes the background color to stay readable in both.
-                    .foregroundStyle(.background)
-            }
-            .buttonStyle(.borderedProminent)
-        } else {
-            Button(action: action) { label }
-                .buttonStyle(.bordered)
-        }
+        Button(action: action) { label }
+            .buttonStyle(ChunkyButtonStyle(prominent: prominent))
     }
 
     private var label: some View {
         Label(title, systemImage: symbol)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .minimumScaleFactor(0.85)
+            .frame(maxWidth: .infinity, minHeight: 48)
     }
 }
 

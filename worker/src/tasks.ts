@@ -22,7 +22,7 @@ import {
 type Row = Record<string, unknown>;
 
 const TASK_COLUMNS = `id, area_id, parent_id, title, details, status, next_step, park_note, park_reason,
-  parked_at, started_at, due_at, remind_at, calendar_event_id, sort, created_via,
+  parked_at, started_at, due_at, remind_at, calendar_event_id, sort, priority, created_via,
   created_at, updated_at, completed_at, deleted_at`;
 const AREA_COLUMNS = "id, name, symbol, color, sort, created_at, updated_at, deleted_at";
 const EVENT_COLUMNS = "id, task_id, kind, note, reason, duration_seconds, source, occurred_at";
@@ -45,6 +45,13 @@ export function mapDbError(err: unknown): never {
   if (msg.includes("CHECK constraint failed")) throw new HttpError(400, "invalid_field");
   if (msg.includes("FOREIGN KEY constraint failed")) throw new HttpError(400, "invalid_reference");
   throw err;
+}
+
+/** Task size: 1 ufak, 2 orta, 3 büyük. */
+function priority(body: Row): number | undefined {
+  const v = num(body, "priority", { integer: true });
+  if (v !== undefined && (v < 1 || v > 3)) throw new HttpError(400, "invalid_field", "priority must be 1, 2 or 3");
+  return v;
 }
 
 async function getTask(env: Env, userId: string, id: string): Promise<Row> {
@@ -198,8 +205,8 @@ export async function createTask(req: Request, env: Env, s: Session): Promise<Re
   try {
     const row = await env.DB.prepare(
       `INSERT INTO tasks (id, user_id, area_id, parent_id, title, details, status, next_step,
-         due_at, remind_at, calendar_event_id, sort, created_via, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         due_at, remind_at, calendar_event_id, sort, priority, created_via, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${TASK_COLUMNS}`,
     )
       .bind(
@@ -215,6 +222,7 @@ export async function createTask(req: Request, env: Env, s: Session): Promise<Re
         timestamp(body, "remind_at") ?? null,
         str(body, "calendar_event_id", { max: 200, nullable: true }) ?? null,
         num(body, "sort") ?? 0,
+        priority(body) ?? 2,
         sourceFor(s, body, "created_via"),
         stamp,
         stamp,
@@ -243,6 +251,7 @@ export async function updateTask(req: Request, env: Env, s: Session, id: string)
     ["remind_at", timestamp(body, "remind_at")],
     ["calendar_event_id", str(body, "calendar_event_id", { max: 200, nullable: true })],
     ["sort", num(body, "sort")],
+    ["priority", priority(body)],
   ];
   for (const [col, val] of fields) {
     if (val !== undefined) sets.push(`${col} = ?`), binds.push(val);
