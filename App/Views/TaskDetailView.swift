@@ -36,6 +36,23 @@ private struct TaskDetailForm: View {
 
     var body: some View {
         Form {
+            // The task's building in Şehir, as it stands now, with its street popping in.
+            if task.parentId == nil, let building = store.city().buildings.first(where: { $0.id == task.id }) {
+                Section {
+                    VStack(spacing: 6) {
+                        CityBuildingShowcase(building: building, level: store.city().level, tile: 110)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 200, alignment: .bottom)
+                        Text(CityText.stage(building))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .listRowBackground(Color.clear)
+            }
+
             Section {
                 primaryActions
             }

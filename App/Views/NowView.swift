@@ -198,20 +198,15 @@ private struct TodaySection: View {
 
 private struct ActiveTaskCard: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let task: TaskItem
-    /// Each time Şimdi opens, the building stretches up and settles, as if work just resumed.
-    @State private var beat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // The task's building in Şehir, as it stands right now.
             if let building = store.city().buildings.first(where: { $0.id == task.id }) {
-                CityBuildingImage(building: building, tileWidth: 96)
-                    .modifier(CityDance(move: 2, beat: beat))
+                CityBuildingShowcase(building: building, level: store.city().level)
                     .frame(maxWidth: .infinity)
                     .frame(height: 180, alignment: .bottom)
-                    .accessibilityLabel(CityText.accessibility(building))
             }
             HStack {
                 if let area = store.area(task.areaId) {
@@ -275,9 +270,6 @@ private struct ActiveTaskCard: View {
         }
         // Take the full height at large text sizes instead of squeezing rows together.
         .fixedSize(horizontal: false, vertical: true)
-        .onAppear {
-            if !reduceMotion { beat += 1 }
-        }
         .padding(.vertical, 8)
     }
 }
