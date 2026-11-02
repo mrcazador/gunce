@@ -95,8 +95,8 @@ struct TaskEvent: Codable, Identifiable, Hashable {
 
     var title: String {
         switch kind {
-        case "created": "Oluşturuldu"
-        case "started": "Başlandı"
+        case "created": "Arsa ayrıldı"
+        case "started": "Temel atıldı"
         case "parked": "İnşaat durdu"
         case "resumed": "Şantiyeye dönüldü"
         case "done": "Teslim edildi"

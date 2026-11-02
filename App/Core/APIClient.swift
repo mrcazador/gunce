@@ -8,7 +8,7 @@ struct APIError: LocalizedError {
     var errorDescription: String? {
         switch code {
         case "unauthorized": "Oturum sona erdi. Yeniden giriş yap."
-        case "another_task_active": "Başka bir görev aktif. Önce onu park et."
+        case "another_task_active": "Başka bir görev aktif. Önce inşaatını durdur."
         case "invalid_state": "Bu görev şu an bu işlemi desteklemiyor."
         case "task_not_found": "Görev bulunamadı."
         case "offline": "Sunucuya ulaşılamadı. Bağlantını kontrol et." + (message.map { " (\($0))" } ?? "")
