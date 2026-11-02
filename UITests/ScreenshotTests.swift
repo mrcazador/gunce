@@ -96,6 +96,12 @@ final class ScreenshotTests: XCTestCase {
 
         if tap(app.tabBars.buttons["Şehir"].firstMatch) {
             snap("\(prefix)-11c-sehir")
+            // Tapping a building zooms in and opens its card.
+            let building = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Çeyrek sunumunu")).firstMatch
+            if tap(building) {
+                snap("\(prefix)-11d-sehir-bina")
+                tap(app.buttons["Kapat"].firstMatch)
+            }
         }
 
         // Bugün lives under Şimdi now: "Haftayı gör" opens the day and week.
