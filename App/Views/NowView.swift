@@ -10,6 +10,20 @@ struct NowView: View {
         @Bindable var store = store
         NavigationStack {
             List {
+                // Offline: changes are kept on the phone and sent when the connection is back.
+                if store.isOffline || !store.outbox.isEmpty {
+                    Label {
+                        Text(store.outbox.isEmpty
+                             ? "Çevrimdışı · bağlantı gelince eşitlenecek"
+                             : "Çevrimdışı · \(store.outbox.count) değişiklik bağlantı gelince gönderilecek")
+                    } icon: {
+                        Image(systemName: "icloud.slash")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .listRowBackground(Color.clear)
+                }
+
                 Section {
                     if let task = store.activeTask {
                         ActiveTaskCard(task: task)
@@ -371,7 +385,11 @@ private struct ParkedRow: View {
             if showReason, let reason = task.parkReason {
                 Label(reason.title, systemImage: reason.symbol)
             }
-            if let parked = task.parkedAt {
+            let idle = Calendar.current.dateComponents([.day], from: store.lastProgress(of: task), to: .now).day ?? 0
+            if idle >= AppStore.stalledAfterDays {
+                Label("\(idle) gündür madde yok", systemImage: "pause.circle")
+                    .foregroundStyle(Color.orange)
+            } else if let parked = task.parkedAt {
                 Text(parked, format: .relative(presentation: .named))
             }
     }

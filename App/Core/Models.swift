@@ -120,6 +120,29 @@ struct TaskEvent: Codable, Identifiable, Hashable {
     }
 }
 
+/// A change made in the app that has not reached the server yet. Kept on disk with the
+/// snapshot, so changes made offline are sent once the connection is back.
+struct PendingRequest: Codable, Identifiable {
+    let id: UUID
+    let method: String
+    let path: String
+    /// JSON body, if any.
+    let body: Data?
+    let createdAt: Date
+
+    init(_ method: String, _ path: String, body: [String: Any]?) {
+        id = UUID()
+        self.method = method
+        self.path = path
+        self.body = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+        createdAt = .now
+    }
+
+    var bodyObject: [String: Any]? {
+        body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    }
+}
+
 // MARK: - API envelopes
 
 struct AuthResponse: Decodable {

@@ -90,7 +90,15 @@ struct MainTabs: View {
                 break
             }
         }
-        .task { await store.refresh() }
+        // Sync now and then every minute while the app is open, so tasks Claude adds and
+        // changes made offline go through without pulling to refresh.
+        .task {
+            await store.refresh()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                await store.refresh()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 Task { await store.refresh() }

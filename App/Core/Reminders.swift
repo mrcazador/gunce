@@ -16,6 +16,8 @@ enum Reminders {
         let body: String?
         let date: Date
         let isDue: Bool
+        /// The daily nudge for the oldest stalled site, rather than a reminder the person set.
+        var isNudge = false
     }
 
     static func registerCategories() {
@@ -90,7 +92,7 @@ enum Reminders {
     private static func request(for item: Item) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         content.title = item.title
-        content.subtitle = item.isDue ? "Zamanı geldi" : "Hatırlatma"
+        content.subtitle = item.isNudge ? "Duran şantiye" : item.isDue ? "Zamanı geldi" : "Hatırlatma"
         if let body = item.body { content.body = body }
         content.sound = .default
         content.categoryIdentifier = category
@@ -98,7 +100,7 @@ enum Reminders {
         content.userInfo = ["taskID": item.taskID]
         let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: item.date)
         let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
-        let kind = item.isDue ? "due" : "remind"
+        let kind = item.isNudge ? "nudge" : item.isDue ? "due" : "remind"
         return UNNotificationRequest(identifier: "\(prefix)\(kind).\(item.taskID)", content: content, trigger: trigger)
     }
 
