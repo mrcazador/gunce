@@ -245,12 +245,13 @@ extension AppStore {
 
     /// The last sign of work on a building. With steps: the newest checked-off step, or when
     /// construction began (first started) before the first one. Without steps there is
-    /// nothing to check off, so going back to the site (the latest start) counts.
+    /// nothing to check off, so the last time it was in hand (latest start or park) counts.
     func lastProgress(of task: TaskItem) -> Date {
         let steps = subtasks(of: task.id).filter { $0.deletedAt == nil }
         let begun = task.createdAt
         if steps.isEmpty {
-            return max(task.startedAt ?? begun, begun)
+            // In hand until it was put down: the latest start or park.
+            return [task.startedAt, task.parkedAt, begun].compactMap { $0 }.max() ?? begun
         }
         if let stepDone = steps.compactMap({ $0.status == .done ? $0.completedAt : nil }).max() {
             return stepDone

@@ -605,7 +605,13 @@ struct CityBuildingImage: View {
                         .accessibilityHidden(true)
                 }
             }
-            .contentShape(Rectangle())
+            // Only the building itself takes taps, not the empty corners of its artwork, so a
+            // building in front does not catch a tap meant for the one behind it.
+            .contentShape(
+                Rectangle()
+                    .size(width: width * 0.6, height: height * 0.62)
+                    .offset(x: width * 0.2, y: height * 0.34)
+            )
     }
 
     /// The badge floats just above the roof line of each stage.
