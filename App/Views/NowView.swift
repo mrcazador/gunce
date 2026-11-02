@@ -166,7 +166,7 @@ private struct TodaySection: View {
             let allDay = event.isAllDay || event.startDate < start
             items.append(Item(
                 id: "event-\(event.eventIdentifier ?? UUID().uuidString)",
-                time: allDay ? start : event.startDate,
+                time: allDay ? start : (event.startDate ?? start),
                 allDay: allDay,
                 title: event.title ?? "Etkinlik",
                 source: "Takvim",
