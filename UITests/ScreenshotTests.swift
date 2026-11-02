@@ -94,15 +94,20 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
-        if tap(app.tabBars.buttons["Bugün"].firstMatch) {
-            snap("\(prefix)-11-bugun")
-            if tap(app.tabBars.buttons["Şehir"].firstMatch) {
-                snap("\(prefix)-11c-sehir")
-                tap(app.tabBars.buttons["Bugün"].firstMatch)
-            }
-            if tap(app.buttons["Hafta"].firstMatch) {
-                snap("\(prefix)-11b-hafta")
-                tap(app.buttons["Gün"].firstMatch)
+        if tap(app.tabBars.buttons["Şehir"].firstMatch) {
+            snap("\(prefix)-11c-sehir")
+        }
+
+        // Bugün lives under Şimdi now: "Haftayı gör" opens the day and week.
+        if tap(app.tabBars.buttons["Şimdi"].firstMatch) {
+            app.swipeUp()
+            if tap(app.buttons["Haftayı gör"].firstMatch) {
+                snap("\(prefix)-11-bugun")
+                if tap(app.buttons["Hafta"].firstMatch) {
+                    snap("\(prefix)-11b-hafta")
+                    tap(app.buttons["Gün"].firstMatch)
+                }
+                tap(app.navigationBars.buttons.firstMatch)
             }
         }
 

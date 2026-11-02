@@ -13,7 +13,7 @@ struct RootView: View {
 }
 
 enum AppTab: Hashable {
-    case now, tasks, today, city, search
+    case now, tasks, city, search
 }
 
 struct MainTabs: View {
@@ -29,9 +29,6 @@ struct MainTabs: View {
             }
             Tab("Görevler", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
-            }
-            Tab("Bugün", systemImage: "calendar", value: AppTab.today) {
-                TodayView()
             }
             Tab("Şehir", systemImage: "building.2", value: AppTab.city) {
                 CityView()

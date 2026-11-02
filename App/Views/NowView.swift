@@ -1,3 +1,4 @@
+import EventKit
 import SwiftUI
 
 /// "Şimdi": the active task and the places you left off.
@@ -20,6 +21,8 @@ struct NowView: View {
                         )
                     }
                 }
+
+                TodaySection()
 
                 if !store.parkedTasks.isEmpty {
                     Section("Kaldığın yerler") {
@@ -58,6 +61,114 @@ struct NowView: View {
                 SettingsView()
             }
         }
+    }
+}
+
+/// Today at a glance under the active task: what is due or reminding today and the day's
+/// calendar events, the oldest stalled site, and the full day and week one tap away.
+private struct TodaySection: View {
+    @Environment(AppStore.self) private var store
+    @State private var events: [EKEvent] = []
+
+    private struct Item: Identifiable {
+        let id: String
+        let time: Date
+        let allDay: Bool
+        let title: String
+        let source: String
+        let taskID: String?
+    }
+
+    var body: some View {
+        let items = todayItems
+        let stalled = store.city().stalled
+        Section {
+            if items.isEmpty {
+                Text("Bugün için planlanmış bir şey yok.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(items.prefix(4)) { item in
+                if let id = item.taskID {
+                    NavigationLink(value: id) { row(item) }
+                } else {
+                    row(item)
+                }
+            }
+            if let oldest = stalled.first {
+                NavigationLink(value: oldest.id) {
+                    Label {
+                        Text(stalled.count == 1 ? "1 açık inşaat duruyor" : "\(stalled.count) açık inşaat duruyor")
+                        + Text(" · en eskisi \(oldest.title), \(oldest.idleDays) gün").foregroundStyle(.secondary)
+                    } icon: {
+                        Image(systemName: "pause.circle")
+                    }
+                    .font(.subheadline)
+                }
+            }
+            NavigationLink {
+                TodayView()
+            } label: {
+                Label("Haftayı gör", systemImage: "calendar")
+            }
+        } header: {
+            Text("Bugün")
+        }
+        .task { load() }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in load() }
+        .onChange(of: store.calendarSyncEnabled) { load() }
+    }
+
+    private func row(_ item: Item) -> some View {
+        HStack(spacing: 12) {
+            Text(item.allDay ? "Tüm gün" : StartTime.clock(item.time))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 52, alignment: .leading)
+            Text(item.title)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            Text(item.source)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(minHeight: 44)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func load() {
+        guard !store.isDemo, store.calendarSyncEnabled else {
+            events = []
+            return
+        }
+        events = CalendarSync.shared.events(on: Calendar.current.startOfDay(for: .now))
+    }
+
+    /// Open tasks due or reminding today, then calendar events, in time order.
+    private var todayItems: [Item] {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: .now)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        var items: [Item] = []
+        for task in store.tasks.values where task.status.isOpen && task.deletedAt == nil {
+            let times = [task.dueAt, task.remindAt].compactMap { $0 }.filter { calendar.isDateInToday($0) }
+            if let first = times.min() {
+                items.append(Item(id: task.id, time: first, allDay: false, title: task.title, source: "Görev", taskID: task.id))
+            }
+        }
+        for event in events where event.startDate < end && event.endDate > start {
+            let allDay = event.isAllDay || event.startDate < start
+            items.append(Item(
+                id: "event-\(event.eventIdentifier ?? UUID().uuidString)",
+                time: allDay ? start : event.startDate,
+                allDay: allDay,
+                title: event.title ?? "Etkinlik",
+                source: "Takvim",
+                taskID: nil
+            ))
+        }
+        return items.sorted { $0.time < $1.time }
     }
 }
 

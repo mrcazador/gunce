@@ -3,9 +3,10 @@ import EventKit
 import SwiftUI
 import UIKit
 
-/// "Bugün": a day planner. A week strip picks the day; below it the day's tasks, reminders
-/// and Apple Calendar events in time order, or the whole week day by day. Tasks with a date
-/// also live in the PickUp calendar when calendar sync is on.
+/// "Bugün": a day planner, opened from Şimdi ("Haftayı gör"). A week strip picks the day;
+/// below it the day's tasks, reminders and Apple Calendar events in time order, or the whole
+/// week day by day. Tasks with a date also live in the PickUp calendar when calendar sync is on.
+/// It is pushed onto Şimdi's navigation stack, which opens the tasks.
 struct TodayView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.openURL) private var openURL
@@ -14,107 +15,102 @@ struct TodayView: View {
     @AppStorage("pickup.today.week") private var showsWeek = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    WeekStrip(selection: $day, hasItems: hasItems)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                        .listRowBackground(Color.clear)
-                    Picker("Görünüm", selection: $showsWeek.animation(.snappy)) {
-                        Text("Gün").tag(false)
-                        Text("Hafta").tag(true)
-                    }
-                    .pickerStyle(.segmented)
+        List {
+            Section {
+                WeekStrip(selection: $day, hasItems: hasItems)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                     .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0))
+                Picker("Görünüm", selection: $showsWeek.animation(.snappy)) {
+                    Text("Gün").tag(false)
+                    Text("Hafta").tag(true)
                 }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 4, trailing: 0))
+            }
 
-                if !store.isDemo, !store.calendarSyncEnabled {
+            if !store.isDemo, !store.calendarSyncEnabled {
+                Section {
+                    ConnectCalendarRow()
+                }
+            }
+
+            if (isToday || (showsWeek && weekDays.contains(where: { calendar.isDateInToday($0) }))), !overdue.isEmpty {
+                Section("Gecikmiş") {
+                    ForEach(overdue) { task in
+                        taskLink(task)
+                    }
+                }
+            }
+
+            if showsWeek {
+                ForEach(weekDays, id: \.self) { date in
+                    let items = agenda(for: date)
                     Section {
-                        ConnectCalendarRow()
-                    }
-                }
-
-                if (isToday || (showsWeek && weekDays.contains(where: { calendar.isDateInToday($0) }))), !overdue.isEmpty {
-                    Section("Gecikmiş") {
-                        ForEach(overdue) { task in
-                            taskLink(task)
-                        }
-                    }
-                }
-
-                if showsWeek {
-                    ForEach(weekDays, id: \.self) { date in
-                        let items = agenda(for: date)
-                        Section {
-                            if items.isEmpty {
-                                Text("Plan yok")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            ForEach(items) { item in
-                                agendaRow(item)
-                            }
-                        } header: {
-                            Button {
-                                withAnimation(.snappy) {
-                                    day = date
-                                    showsWeek = false
-                                }
-                            } label: {
-                                HStack {
-                                    Text(title(for: date))
-                                        .foregroundStyle(calendar.isDateInToday(date) ? .primary : .secondary)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Günü açar")
-                        }
-                    }
-                } else {
-                    Section {
-                        let items = agenda(for: day)
                         if items.isEmpty {
-                            Text(isToday ? "Bugün için planlanmış bir şey yok." : "Bu gün için planlanmış bir şey yok.")
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, minHeight: 60)
+                            Text("Plan yok")
+                                .font(.subheadline)
+                                .foregroundStyle(.tertiary)
                         }
                         ForEach(items) { item in
                             agendaRow(item)
                         }
                     } header: {
-                        Text(dayTitle)
-                    }
-                }
-            }
-            .navigationTitle(showsWeek ? weekTitle : (isToday ? "Bugün" : dayTitle))
-            .navigationDestination(for: String.self) { id in
-                TaskDetailView(taskID: id)
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if !isToday {
-                        Button("Bugün") {
-                            withAnimation { day = Calendar.current.startOfDay(for: .now) }
+                        Button {
+                            withAnimation(.snappy) {
+                                day = date
+                                showsWeek = false
+                            }
+                        } label: {
+                            HStack {
+                                Text(title(for: date))
+                                    .foregroundStyle(calendar.isDateInToday(date) ? .primary : .secondary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Günü açar")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Bu güne ekle", systemImage: "plus") {
-                        store.captureRequest = CaptureRequest(dueAt: suggestedTime)
+            } else {
+                Section {
+                    let items = agenda(for: day)
+                    if items.isEmpty {
+                        Text(isToday ? "Bugün için planlanmış bir şey yok." : "Bu gün için planlanmış bir şey yok.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 60)
+                    }
+                    ForEach(items) { item in
+                        agendaRow(item)
+                    }
+                } header: {
+                    Text(dayTitle)
+                }
+            }
+        }
+        .navigationTitle(showsWeek ? weekTitle : (isToday ? "Bugün" : dayTitle))
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if !isToday {
+                    Button("Bugün") {
+                        withAnimation { day = Calendar.current.startOfDay(for: .now) }
                     }
                 }
             }
-            .refreshable { await store.refresh() }
-            .task(id: "\(day.timeIntervalSince1970)-\(showsWeek)") { loadEvents() }
-            .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in loadEvents() }
-            .onChange(of: store.calendarSyncEnabled) { loadEvents() }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Bu güne ekle", systemImage: "plus") {
+                    store.captureRequest = CaptureRequest(dueAt: suggestedTime)
+                }
+            }
         }
+        .refreshable { await store.refresh() }
+        .task(id: "\(day.timeIntervalSince1970)-\(showsWeek)") { loadEvents() }
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in loadEvents() }
+        .onChange(of: store.calendarSyncEnabled) { loadEvents() }
     }
 
     private func taskLink(_ task: TaskItem) -> some View {
