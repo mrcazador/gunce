@@ -785,6 +785,8 @@ final class AppStore {
         ]
         tasks = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
         tasks["s2"]?.sort = 1
+        // Finished a while ago: moved in (iskan) in the city.
+        for id in ["t11", "t12"] { tasks[id]?.completedAt = ago(60 * 24 * 5) }
         let history: [(String, String, String?, ParkReason?, Int?, Date)] = [
             ("e1", "created", nil, nil, nil, made),
             ("e2", "started", nil, nil, nil, ago(60 * 26)),

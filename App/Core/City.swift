@@ -16,6 +16,36 @@ struct CityBuilding: Identifiable, Hashable {
         case finished
     }
 
+    /// The artwork for where the building stands, from the foundation to moving in.
+    enum Art: String {
+        case foundation = "temel"
+        case groundFloor = "kat1"
+        case upperFloor = "kat2"
+        case shell = "kaba"
+        case finished = "final"
+        case occupied = "iskan"
+        case stalled = "durmus"
+    }
+
+    /// Days after finishing until the building is lived in.
+    static let movesInAfterDays = 2
+
+    var art: Art {
+        switch stage {
+        case .planned:
+            return .foundation
+        case .stalled, .abandoned:
+            return .stalled
+        case .finished:
+            return finishedDays >= Self.movesInAfterDays ? .occupied : .finished
+        case .rising:
+            guard stepsTotal > 0 else { return .groundFloor }
+            if stepsDone == 0 { return .foundation }
+            if stepsDone == stepsTotal { return .shell }
+            return Double(stepsDone) / Double(stepsTotal) < 0.5 ? .groundFloor : .upperFloor
+        }
+    }
+
     let id: String
     let title: String
     let areaId: String?
@@ -27,6 +57,8 @@ struct CityBuilding: Identifiable, Hashable {
     let stepsTotal: Int
     /// Days since it was parked (stalled and abandoned buildings).
     let idleDays: Int
+    /// Days since it was finished: after a few days the building is moved into (iskan).
+    let finishedDays: Int
     /// Finished after waiting a week or more somewhere along the way: these become the
     /// city's landmarks, so the work you kept putting off builds its finest buildings.
     let isLandmark: Bool
@@ -114,6 +146,7 @@ extension AppStore {
                 stepsDone: steps.done,
                 stepsTotal: steps.total,
                 idleDays: idle,
+                finishedDays: task.completedAt.map { calendar.dateComponents([.day], from: $0, to: now).day ?? 0 } ?? 0,
                 isLandmark: stage == .finished && waitedLong(task.id),
                 parkNote: task.parkNote,
                 createdAt: task.createdAt

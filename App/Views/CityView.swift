@@ -170,7 +170,7 @@ private struct CityCanvas: View {
         }
         let minX = corners.map(\.x).min() ?? 0, maxX = corners.map(\.x).max() ?? 0
         let minY = corners.map(\.y).min() ?? 0, maxY = corners.map(\.y).max() ?? 0
-        let buildingHeight = tile * CityBuildingImage.aspect
+        let buildingHeight = tile / CityBuildingImage.tileShare * CityBuildingImage.aspect
         let top = minY - buildingHeight
         let offset = CGPoint(x: -minX, y: -top)
 
@@ -200,10 +200,11 @@ private struct CityCanvas: View {
                 // The image's bottom edge is the tile's front corner.
                 let front = CGPoint(x: centre.x + offset.x, y: centre.y + tile / 4 + offset.y)
                 Button { open(plot.building) } label: {
-                    CityBuildingImage(building: plot.building, width: tile * 0.92)
+                    CityBuildingImage(building: plot.building, tileWidth: tile)
                 }
                 .buttonStyle(.plain)
-                .position(x: front.x, y: front.y - buildingHeight * 0.92 / 2)
+                // The artwork's bottom edge (less its small inset) is the tile's front corner.
+                .position(x: front.x, y: front.y - buildingHeight / 2 + buildingHeight * CityBuildingImage.bottomInset)
                 .accessibilityLabel(CityText.accessibility(plot.building))
             }
         }
@@ -211,51 +212,50 @@ private struct CityCanvas: View {
     }
 }
 
-/// One building at its stage: the unbuilt part is a faint plan, the built part rises from the
-/// ground with the finished steps; a stalled site loses its colour, an abandoned one more.
+/// One building at its stage: foundation, floors rising, the shell, finished, moved in, or a
+/// stalled site. A plot that is only planned shows the foundation faintly.
 struct CityBuildingImage: View {
     /// Height / width of the artwork.
-    static let aspect: CGFloat = 616.0 / 480.0
-    /// Share of the artwork's height taken by the ground tile.
-    private static let groundShare: CGFloat = 0.36
+    static let aspect: CGFloat = 780.0 / 600.0
+    /// The ground tile's width as a share of the artwork's width.
+    static let tileShare: CGFloat = 420.0 / 600.0
+    /// Gap below the tile's front corner, as a share of the artwork's height.
+    static let bottomInset: CGFloat = 12.0 / 780.0
 
     let building: CityBuilding
-    let width: CGFloat
+    /// Width of the ground tile on screen; the artwork is wider (cranes, trees).
+    let tileWidth: CGFloat
+
+    var width: CGFloat { tileWidth / Self.tileShare }
+    var height: CGFloat { width * Self.aspect }
 
     var body: some View {
-        let height = width * Self.aspect
-        let shown = Self.groundShare + (1 - Self.groundShare) * building.progress
-        let art = Image("city-konut-house").resizable().scaledToFit()
-        ZStack(alignment: .bottom) {
-            if building.stage != .finished {
-                art.saturation(0).opacity(0.16)
-            }
-            art
-                .saturation(saturation)
-                .brightness(building.stage == .abandoned ? -0.06 : 0)
-                .mask(alignment: .bottom) {
-                    Rectangle().frame(height: height * shown)
+        Image("city-\(CityTheme.current)-\(building.art.rawValue)")
+            .resizable()
+            .scaledToFit()
+            .saturation(building.stage == .stalled ? 0.7 : 1)
+            .opacity(building.stage == .planned ? 0.55 : 1)
+            .frame(width: width, height: height)
+            .overlay(alignment: .top) {
+                if let badge {
+                    Image(systemName: badge)
+                        .font(.caption.weight(.semibold))
+                        .padding(6)
+                        .background(.regularMaterial, in: Circle())
+                        .offset(y: height * badgeDrop)
+                        .accessibilityHidden(true)
                 }
-        }
-        .frame(width: width, height: height)
-        .overlay(alignment: .top) {
-            if let badge {
-                Image(systemName: badge)
-                    .font(.caption.weight(.semibold))
-                    .padding(6)
-                    .background(.regularMaterial, in: Circle())
-                    .offset(y: height * (1 - shown) - 8)
-                    .accessibilityHidden(true)
             }
-        }
-        .contentShape(Rectangle())
+            .contentShape(Rectangle())
     }
 
-    private var saturation: Double {
-        switch building.stage {
-        case .stalled: 0.35
-        case .abandoned: 0
-        default: 1
+    /// The badge floats just above the roof line of each stage.
+    private var badgeDrop: CGFloat {
+        switch building.art {
+        case .foundation: 0.62
+        case .groundFloor: 0.38
+        case .upperFloor: 0.22
+        default: 0.14
         }
     }
 
@@ -267,6 +267,12 @@ struct CityBuildingImage: View {
         default: return nil
         }
     }
+}
+
+/// The artwork set in use. Each theme ships the same stages as `city-<theme>-<stage>` images,
+/// so the look of the city can change without touching the rules.
+enum CityTheme {
+    static let current = "konut"
 }
 
 // MARK: - Building sheet
@@ -281,7 +287,7 @@ private struct CityBuildingSheet: View {
             Form {
                 Section {
                     HStack(alignment: .center, spacing: 16) {
-                        CityBuildingImage(building: building, width: 84)
+                        CityBuildingImage(building: building, tileWidth: 64)
                         VStack(alignment: .leading, spacing: 4) {
                             if let area = store.area(building.areaId) {
                                 AreaLabel(area: area)
