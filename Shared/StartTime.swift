@@ -1,7 +1,7 @@
 import Foundation
 
-/// When the active task started, as short Turkish text without seconds:
-/// "09:40'ta başladın", "Dün 17:20'de başladın", "12 Eki'de başladın", "09:40'tan beri".
+/// When the active task started, as a short Turkish date:
+/// "02.11'de başladın", "02.11'den beri".
 /// Used by the app, the widget and the Live Activity so they all say the same thing.
 enum StartTime {
     /// "09:40"
@@ -10,28 +10,21 @@ enum StartTime {
         return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
     }
 
-    /// Now screen: "09:40'ta başladın", "Dün 17:20'de başladın", "12 Eki'de başladın".
+    /// Now screen: "02.11'de başladın".
     static func sentence(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        "\(phrase(date, now: now, calendar: calendar, case: .locative)) başladın"
+        "\(phrase(date, calendar: calendar, case: .locative)) başladın"
     }
 
-    /// Widgets and Lock Screen: "09:40'tan beri", "Dün 17:20'den beri", "12 Eki'den beri".
+    /// Widgets and Lock Screen: "02.11'den beri".
     static func since(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        "\(phrase(date, now: now, calendar: calendar, case: .ablative)) beri"
+        "\(phrase(date, calendar: calendar, case: .ablative)) beri"
     }
 
-    /// VoiceOver: "Saat 09:40'ta başladın", "Dün saat 17:20'de başladın", "12 Ekim'de başladın".
+    /// VoiceOver: "2 Kasım'da başladın".
     static func spoken(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        switch day(date, now: now, calendar: calendar) {
-        case .today:
-            return "Saat \(withSuffix(time: date, calendar: calendar, case: .locative)) başladın"
-        case .yesterday:
-            return "Dün saat \(withSuffix(time: date, calendar: calendar, case: .locative)) başladın"
-        case .earlier:
-            let c = calendar.dateComponents([.day, .month], from: date)
-            let month = months[(c.month ?? 1) - 1]
-            return "\(c.day ?? 1) \(month.full)'\(month.sound.suffix(.locative)) başladın"
-        }
+        let c = calendar.dateComponents([.day, .month], from: date)
+        let month = months[(c.month ?? 1) - 1]
+        return "\(c.day ?? 1) \(month.full)'\(month.sound.suffix(.locative)) başladın"
     }
 
     /// The next moment the wording changes (midnight), for widget timelines.
@@ -56,35 +49,11 @@ enum StartTime {
         }
     }
 
-    private enum Day { case today, yesterday, earlier }
-
-    private static func day(_ date: Date, now: Date, calendar: Calendar) -> Day {
-        let start = calendar.startOfDay(for: now)
-        if date >= start { return .today }
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: start) ?? start.addingTimeInterval(-86_400)
-        if date >= yesterday { return .yesterday }
-        return .earlier
-    }
-
-    private static func phrase(_ date: Date, now: Date, calendar: Calendar, case c: Case) -> String {
-        switch day(date, now: now, calendar: calendar) {
-        case .today:
-            return withSuffix(time: date, calendar: calendar, case: c)
-        case .yesterday:
-            return "Dün \(withSuffix(time: date, calendar: calendar, case: c))"
-        case .earlier:
-            let comps = calendar.dateComponents([.day, .month], from: date)
-            let month = months[(comps.month ?? 1) - 1]
-            return "\(comps.day ?? 1) \(month.short)'\(month.sound.suffix(c))"
-        }
-    }
-
-    /// "09:40'ta": the suffix follows the last spoken word (the minutes, or the hour at :00).
-    private static func withSuffix(time date: Date, calendar: Calendar, case c: Case) -> String {
-        let comps = calendar.dateComponents([.hour, .minute], from: date)
-        let minute = comps.minute ?? 0
-        let spoken = minute == 0 ? (comps.hour ?? 0) : minute
-        return "\(clock(date, calendar: calendar))'\(numberSound(spoken).suffix(c))"
+    /// "02.11'de": day.month, the suffix follows the month number as read aloud.
+    private static func phrase(_ date: Date, calendar: Calendar, case c: Case) -> String {
+        let comps = calendar.dateComponents([.day, .month], from: date)
+        let day = comps.day ?? 1, month = comps.month ?? 1
+        return String(format: "%02d.%02d", day, month) + "'" + numberSound(month).suffix(c)
     }
 
     /// How a number 0–59 ends when read aloud.
