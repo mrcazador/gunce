@@ -113,6 +113,7 @@ private struct TaskDetailForm: View {
                 }
             }
         }
+        .themedBackground()
         .navigationTitle(task.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -277,12 +278,12 @@ private struct TaskDetailForm: View {
             switch task.status {
             case .inbox, .parked:
                 if task.parentId == nil {
-                    ActionButton(title: task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
+                    ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Başla", symbol: "play.fill", prominent: true) {
                         store.requestStart(task)
                     }
                 }
             case .active:
-                ActionButton(title: "Park et", symbol: "pause.fill", prominent: true) {
+                ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
                 }
             case .done, .archived:
@@ -291,7 +292,7 @@ private struct TaskDetailForm: View {
                 }
             }
             if task.status.isOpen {
-                ActionButton(title: "Bitti", symbol: "checkmark", prominent: task.parentId != nil) {
+                ActionButton(title: "Teslim et", symbol: "checkmark", prominent: task.parentId != nil) {
                     Task { await store.complete(task) }
                 }
             }

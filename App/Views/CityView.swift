@@ -40,6 +40,8 @@ struct CityView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.themeBackground)
             .navigationTitle("Şehir")
             .sheet(item: $selected) { building in
                 CityBuildingSheet(building: building)
@@ -72,7 +74,7 @@ private struct CityHeader: View {
             if let next = city.level.next {
                 VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: city.levelProgress)
-                        .tint(Color.primary)
+                        .tint(Color.themeSage)
                     Text("\(next.title) için \(next.threshold - city.finished) bina daha")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -196,7 +198,7 @@ private struct CityCanvas: View {
                     .map { CGPoint(x: $0.x + offset.x, y: $0.y + offset.y) }
                 let tint = d.area?.tint ?? .gray
                 Path { path in path.addLines(quad); path.closeSubpath() }
-                    .fill(Color(uiColor: .systemBackground))
+                    .fill(Color.themeBackground)
                 Path { path in path.addLines(quad); path.closeSubpath() }
                     .fill(tint.opacity(0.14))
                 Path { path in path.addLines(quad); path.closeSubpath() }
@@ -321,7 +323,7 @@ private struct CityBuildingSheet: View {
                 }
                 Section {
                     if let task = store.tasks[building.id], task.status == .inbox || task.status == .parked {
-                        Button(task.status == .parked ? "Devam et" : "Başla", systemImage: "play.fill") {
+                        Button(task.status == .parked ? "Şantiyeye dön" : "Başla", systemImage: "play.fill") {
                             dismiss()
                             Task {
                                 try? await Task.sleep(for: .milliseconds(350))
@@ -335,10 +337,11 @@ private struct CityBuildingSheet: View {
                     }
                 } footer: {
                     if building.stage == .abandoned {
-                        Text("Devam edersen toparlanır; bitirirsen şehrin anıt yapılarından biri olur.")
+                        Text("Şantiyeye dönersen toparlanır; bitirirsen şehrin anıt yapılarından biri olur.")
                     }
                 }
             }
+            .themedBackground()
             .navigationTitle("Bina")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

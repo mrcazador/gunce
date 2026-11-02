@@ -92,6 +92,7 @@ struct TodayView: View {
                 }
             }
         }
+        .themedBackground()
         .navigationTitle(showsWeek ? weekTitle : (isToday ? "Bugün" : dayTitle))
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

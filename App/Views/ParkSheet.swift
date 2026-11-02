@@ -64,7 +64,7 @@ struct ParkSheet: View {
                     Button("Vazgeç") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(request.next == nil ? "Park et" : "Park et ve geç", action: confirm)
+                    Button(request.next == nil ? "İnşaatı durdur" : "Durdur ve geç", action: confirm)
                         .buttonStyle(.glassProminent)
                 }
             }

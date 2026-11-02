@@ -16,7 +16,7 @@ struct MenuBarPanel: View {
             } else if let pending {
                 MacParkForm(
                     taskTitle: pending.task.title,
-                    confirmTitle: pending.next == nil ? "Park et" : "Park et ve geç"
+                    confirmTitle: pending.next == nil ? "İnşaatı durdur" : "Durdur ve geç"
                 ) {
                     withAnimation(.snappy) { self.pending = nil }
                 } onConfirm: { note, reason, remindAt in
@@ -90,14 +90,14 @@ struct MenuBarPanel: View {
                     Button {
                         withAnimation(.snappy) { pending = ParkRequest(task: task, next: nil) }
                     } label: {
-                        Label("Park et", systemImage: "pause.fill")
+                        Label("Durdur", systemImage: "pause.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     Button {
                         Task { await store.complete(task) }
                     } label: {
-                        Label("Bitti", systemImage: "checkmark")
+                        Label("Teslim et", systemImage: "checkmark")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
@@ -139,7 +139,7 @@ struct MenuBarPanel: View {
                             }
                         }
                         Spacer(minLength: 4)
-                        Button("Devam et") { resume(task) }
+                        Button("Şantiyeye dön") { resume(task) }
                             .controlSize(.small)
                     }
                 }

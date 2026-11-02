@@ -40,6 +40,8 @@ struct MainTabs: View {
         .tabViewBottomAccessory {
             CaptureBar()
         }
+        // Soft, rounded type for the game-like look; park notes keep their serif italic.
+        .fontDesign(.rounded)
         .sheet(item: $store.captureRequest) { request in
             CaptureSheet(request: request)
         }

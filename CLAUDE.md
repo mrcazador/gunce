@@ -35,6 +35,8 @@ and fix it.
 - Areas (alanlar): **İş, Hayat, Spor, Yatırım**. Users can add more later; colors and SF Symbols
   live in `areas` rows.
 - A task has a status: `inbox`, `active`, `parked`, `done`, `archived`. Subtasks use `parent_id`.
+- A task has a size (`priority`): 1 Ufak, 2 Orta (default), 3 Büyük. It decides how grand its
+  building is in Şehir. Claude's tools call it `size` (`small`, `medium`, `large`).
 - **Exactly one active task per user.** Starting a task while another is active auto-parks the
   previous one and asks for a "nerede kaldın?" note. The database enforces this (partial unique
   index) and `POST /v1/tasks/:id/start` does the switch atomically in one D1 batch. Never work around it client-side.
@@ -42,29 +44,38 @@ and fix it.
   parked (with note and reason), resumed, done.
 - Park reasons: `waiting` (Yanıt bekliyorum), `need_info` (Bilgi lazım), `later` (Sonra devam).
 - Reminders are app notifications (Said no longer uses Apple Reminders). Calendar sync is both
-  ways: timed tasks go to a dedicated "PickUp" calendar, and calendar events appear in "Bugün".
+  ways: timed tasks go to a dedicated "PickUp" calendar, and calendar events appear in "Bugün"
+  (under Şimdi, with the full day and week behind "Haftayı gör").
 - Tasks Claude creates have `created_via = 'claude'`.
 - **Şehir** (gamification): every top-level task is a building, derived from tasks and İz only
   (`App/Core/City.swift`, nothing entered by hand). Steps raise floors; parked 3+ days = stalled,
   7+ days = abandoned (never destroyed); finished after a week-long wait = landmark. Levels: Bina,
   Site (5), Mahalle (15), Şehir (40) finished buildings. It is its own world: no real-life rewards.
-  Artwork is isometric and warm, per theme in the asset catalog (`city-<theme>-…`).
+  Each area builds its own kind in its own district, with roads between: Hayat European homes,
+  İş glass offices, Spor sports halls, Yatırım banks (areas added later build homes). Size picks
+  the finished building (`city-<kind>-final1…3`); construction stages are shared per kind
+  (`city-<kind>-kat1|kat2|kaba|durmus`, `city-temel`); moved-in (iskan) is the finished art lit up.
+  Artwork is isometric, warm and soft, normalized to one tile anchor (450×585).
 
 ## Design rules
 
 Design source: the "Günce — ekran taslakları" canvas. Follow Apple HIG; use system components.
 
-- Navigation: tab bar with **Şimdi, Görevler, Bugün, Şehir** + a separate search tab. A floating capture
+- Navigation: tab bar with **Şimdi, Görevler, Şehir** + a separate search tab. A floating capture
   bar ("Aklına geleni yaz…") sits above the tab bar (`tabViewBottomAccessory`).
 - Liquid Glass only on floating chrome (tab bar, capture bar), never on content.
-- App accent is near-black (`.primary`). Color means *area* only:
+- Theme "Yumuşak oyun" (soft game): warm cream ground (`ThemeBackground`), SF Rounded type,
+  chunky buttons on a ledge (`ChunkyButtonStyle`): brick (`ThemeBrick`) for the one main action,
+  sand (`ThemeCard`) for the rest; sage (`ThemeSage`) for progress; accent `AccentColor` (dark
+  brick). Colors live in the asset catalog with dark variants. Area colors are for areas only:
   İş indigo, Hayat pink, Spor orange, Yatırım green — always paired with its SF Symbol
   (`briefcase`, `heart`, `figure.run`, `chart.line.uptrend.xyaxis`).
 - Signature: park notes are shown in **New York italic** (`.font(.system(.body, design: .serif).italic())`).
   Nothing else uses serif.
 - One prominent (filled) button per screen. Targets ≥ 44 pt. Dynamic Type, Dark Mode,
   Reduce Motion and VoiceOver labels are required, not optional.
-- UI copy is Turkish, sentence case, verbs that say what happens ("Park et", "Devam et", "Bitti").
+- UI copy is Turkish, sentence case, verbs that say what happens, in the construction language:
+  "İnşaatı durdur" (park), "Şantiyeye dön" (resume), "Teslim et" (done). Sheet dismiss stays "Bitti".
 
 ## Security rules (public repo)
 

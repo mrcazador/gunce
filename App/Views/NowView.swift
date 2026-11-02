@@ -43,6 +43,7 @@ struct NowView: View {
                     }
                 }
             }
+            .themedBackground()
             .navigationTitle("Şimdi")
             .navigationDestination(for: String.self) { id in
                 TaskDetailView(taskID: id)
@@ -98,8 +99,12 @@ private struct TodaySection: View {
             if let oldest = stalled.first {
                 NavigationLink(value: oldest.id) {
                     Label {
-                        Text(stalled.count == 1 ? "1 açık inşaat duruyor" : "\(stalled.count) açık inşaat duruyor")
-                        + Text(" · en eskisi \(oldest.title), \(oldest.idleDays) gün").foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(stalled.count) açık inşaat duruyor")
+                            Text("En eskisi: \(oldest.title), \(oldest.idleDays) gün")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     } icon: {
                         Image(systemName: "pause.circle")
                     }
@@ -178,6 +183,13 @@ private struct ActiveTaskCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // The task's building in Şehir, as it stands right now.
+            if let building = store.city().buildings.first(where: { $0.id == task.id }) {
+                CityBuildingImage(building: building, tileWidth: 96)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 180, alignment: .bottom)
+                    .accessibilityLabel(CityText.accessibility(building))
+            }
             HStack {
                 if let area = store.area(task.areaId) {
                     AreaLabel(area: area)
@@ -230,10 +242,10 @@ private struct ActiveTaskCard: View {
             }
 
             ActionRow {
-                ActionButton(title: "Park et", symbol: "pause.fill", prominent: true) {
+                ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
                     store.requestPark(task)
                 }
-                ActionButton(title: "Bitti", symbol: "checkmark") {
+                ActionButton(title: "Teslim et", symbol: "checkmark") {
                     Task { await store.complete(task) }
                 }
             }
@@ -280,7 +292,7 @@ private struct ParkedRow: View {
     let task: TaskItem
 
     private var resumeButton: some View {
-        Button("Devam et") {
+        Button("Şantiyeye dön") {
             store.requestStart(task)
         }
         .buttonStyle(.bordered)
@@ -324,14 +336,14 @@ private struct ParkedRow: View {
                 .opacity(0)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button("Devam et", systemImage: "play") {
+            Button("Şantiyeye dön", systemImage: "play") {
                 store.requestStart(task)
             }
             .tint(Color.primary)
         }
         .contextMenu {
-            Button("Devam et", systemImage: "play") { store.requestStart(task) }
-            Button("Bitti", systemImage: "checkmark") {
+            Button("Şantiyeye dön", systemImage: "play") { store.requestStart(task) }
+            Button("Teslim et", systemImage: "checkmark") {
                 Task { await store.complete(task) }
             }
         }
@@ -378,7 +390,7 @@ private struct NextStepRow: View {
                     .accessibilityLabel("\(total) adımın \(done) tanesi bitti")
             }
             ProgressView(value: Double(done), total: Double(max(total, 1)))
-                .tint(Color.primary)
+                .tint(Color.themeSage)
                 .accessibilityHidden(true)
             Button {
                 Task { await store.complete(step) }

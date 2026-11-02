@@ -241,7 +241,7 @@ private struct ActiveButtons: View {
                 .accessibilityLabel("Adımı bitir: \(firstStep.title)")
             }
             Button(intent: CompleteTaskIntent(taskID: taskID)) {
-                WidgetButtonLabel(title: "Bitti", symbol: "checkmark", prominent: firstStep == nil)
+                WidgetButtonLabel(title: "Teslim et", symbol: "checkmark", prominent: firstStep == nil)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Görevi bitir")
@@ -316,7 +316,7 @@ private struct IdleHero: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Link(destination: PickUpLink.resume(first.id)) {
-                    WidgetButtonLabel(title: "Devam et", symbol: "play.fill", prominent: true)
+                    WidgetButtonLabel(title: "Şantiyeye dön", symbol: "play.fill", prominent: true)
                 }
                 .frame(width: 112)
             }
