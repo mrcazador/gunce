@@ -113,14 +113,14 @@ private struct ActivityButtons: View {
     var body: some View {
         HStack(spacing: 10) {
             Link(destination: PickUpLink.park) {
-                Label("Durdur", systemImage: "pause.fill")
+                Label("Ara ver", systemImage: "pause.fill")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .foregroundStyle(.background)
                     .background(Color.primary, in: Capsule())
             }
             Button(intent: CompleteTaskIntent(taskID: taskID)) {
-                Label("Teslim et", systemImage: "checkmark")
+                Label("Bitti", systemImage: "checkmark")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 44)
             }

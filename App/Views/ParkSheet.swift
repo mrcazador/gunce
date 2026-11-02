@@ -11,53 +11,59 @@ struct ParkSheet: View {
     @State private var remind: Reminders.Preset = .none
     @FocusState private var noteFocused: Bool
 
+    @State private var showMore = false
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Bir cümleyle: nerede kaldın?", text: $note, axis: .vertical)
+                    // One line, one tap: Return takes the break. Everything else is optional.
+                    TextField("Bir cümleyle: nerede kaldın?", text: $note)
                         .font(.parkNote)
                         .fontDesign(.serif)
-                        .lineLimit(2...5)
                         .focused($noteFocused)
+                        .submitLabel(.done)
+                        .onSubmit(confirm)
                 } header: {
                     Text(request.task.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .textCase(nil)
                 } footer: {
-                    if let next = request.next {
-                        Text("Sonra “\(next.title)” başlayacak.")
-                    }
-                }
-
-                Section("Neden ara veriyorsun?") {
-                    Picker("Neden", selection: $reason) {
-                        ForEach(ParkReason.allCases) { reason in
-                            Label(reason.title, systemImage: reason.symbol).tag(reason)
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let fallback = autoNote {
+                            Text("Boş bırakırsan “\(fallback)” yazılır.")
+                        }
+                        if let next = request.next {
+                            Text("Sonra “\(next.title)” başlayacak.")
                         }
                     }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
                 }
 
                 Section {
-                    Picker("Hatırlat", selection: $remind) {
-                        ForEach(Reminders.Preset.allCases) { preset in
-                            Text(preset.title).tag(preset)
+                    DisclosureGroup("Neden ve hatırlatma", isExpanded: $showMore) {
+                        Picker("Neden", selection: $reason) {
+                            ForEach(ParkReason.allCases) { reason in
+                                Label(reason.title, systemImage: reason.symbol).tag(reason)
+                            }
                         }
-                    }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                } header: {
-                    Text("Ne zaman hatırlatayım?")
-                } footer: {
-                    if let date = remind.date() {
-                        Text("Bildirim: \(date.formatted(.dateTime.weekday(.wide).hour().minute()))")
+                        .pickerStyle(.inline)
+                        .labelsHidden()
+                        Picker("Hatırlat", selection: $remind) {
+                            ForEach(Reminders.Preset.allCases) { preset in
+                                Text(preset.title).tag(preset)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        if let date = remind.date() {
+                            Text("Bildirim: \(date.formatted(.dateTime.weekday(.wide).hour().minute()))")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
+            .themedBackground()
             .navigationTitle("Nerede kaldın?")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -65,21 +71,27 @@ struct ParkSheet: View {
                     Button("Vazgeç") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(request.next == nil ? "İnşaatı durdur" : "Durdur ve geç", action: confirm)
+                    Button(request.next == nil ? "Ara ver" : "Ara ver ve geç", action: confirm)
                         .buttonStyle(.glassProminent)
                 }
             }
             .onAppear {
                 // Start from where you left off last time; edit it or write over it.
                 if note.isEmpty { note = request.task.parkNote ?? "" }
-                remind = Self.suggestedReminder(for: reason)
                 noteFocused = true
             }
             .onChange(of: reason) { _, newValue in
                 remind = Self.suggestedReminder(for: newValue)
             }
         }
-        .presentationDetents([.large])
+        .presentationDetents([.medium, .large])
+    }
+
+    /// Written for you when the note is left empty: the step you would pick up next.
+    private var autoNote: String? {
+        if let step = store.nextStep(of: request.task.id) { return "Sıradaki adım: \(step.title)" }
+        if let next = request.task.nextStep, !next.isEmpty { return "Sıradaki adım: \(next)" }
+        return nil
     }
 
     /// Waiting on someone or missing information: come back tomorrow morning by default, so
@@ -92,7 +104,8 @@ struct ParkSheet: View {
     }
 
     private func confirm() {
-        let note = note
+        let typed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = typed.isEmpty ? (autoNote ?? "") : typed
         let reason = reason
         let request = request
         let remindAt = remind.date()

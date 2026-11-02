@@ -65,7 +65,7 @@ struct MacMainView: View {
         .sheet(item: $store.parkRequest) { request in
             MacParkForm(
                 taskTitle: request.task.title,
-                confirmTitle: request.next == nil ? "İnşaatı durdur" : "Durdur ve geç"
+                confirmTitle: request.next == nil ? "Ara ver" : "Ara ver ve geç"
             ) {
                 store.parkRequest = nil
             } onConfirm: { note, reason, remindAt in
@@ -177,7 +177,7 @@ private struct MacNowColumn: View {
                         HStack(alignment: .firstTextBaseline) {
                             MacTaskRow(task: task)
                             Spacer(minLength: 8)
-                            Button("Şantiyeye dön") { store.requestStart(task) }
+                            Button("Devam et") { store.requestStart(task) }
                                 .controlSize(.small)
                         }
                         .tag(task.id)
@@ -240,9 +240,9 @@ private struct MacActiveCard: View {
                 .help("Adımı bitir")
             }
             HStack {
-                Button("İnşaatı durdur", systemImage: "pause.fill") { store.requestPark(task) }
+                Button("Ara ver", systemImage: "pause.fill") { store.requestPark(task) }
                     .buttonStyle(.borderedProminent)
-                Button("Teslim et", systemImage: "checkmark") {
+                Button("Bitti", systemImage: "checkmark") {
                     Task { await store.complete(task) }
                 }
             }
@@ -261,11 +261,11 @@ struct MacTaskMenu: View {
     var body: some View {
         switch task.status {
         case .inbox, .parked:
-            Button(task.status == .parked ? "Şantiyeye dön" : "Başla") { store.requestStart(task) }
-            Button("Teslim et") { Task { await store.complete(task) } }
+            Button(task.status == .parked ? "Devam et" : "Başla") { store.requestStart(task) }
+            Button("Bitti") { Task { await store.complete(task) } }
         case .active:
-            Button("İnşaatı durdur") { store.requestPark(task) }
-            Button("Teslim et") { Task { await store.complete(task) } }
+            Button("Ara ver") { store.requestPark(task) }
+            Button("Bitti") { Task { await store.complete(task) } }
         case .done, .archived:
             Button("Yeniden aç") { Task { await store.reopen(task) } }
         }
