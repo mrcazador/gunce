@@ -400,6 +400,7 @@ final class AppStore {
         if a.dueAt != b.dueAt { fields["due_at"] = JSONCoding.value(b.dueAt) }
         if a.remindAt != b.remindAt { fields["remind_at"] = JSONCoding.value(b.remindAt) }
         if a.sort != b.sort { fields["sort"] = b.sort }
+        if a.priority != b.priority { fields["priority"] = b.priority ?? TaskSize.medium.rawValue }
         if a.calendarEventId != b.calendarEventId { fields["calendar_event_id"] = JSONCoding.value(b.calendarEventId) }
         return fields
     }
@@ -787,6 +788,10 @@ final class AppStore {
         tasks["s2"]?.sort = 1
         // Finished a while ago: moved in (iskan) in the city.
         for id in ["t11", "t12"] { tasks[id]?.completedAt = ago(60 * 24 * 5) }
+        // Sizes: the city mixes small, medium and grand buildings.
+        for (id, size) in [("t1", 3), ("t3", 3), ("t10", 3), ("t4", 1), ("t7", 1), ("t9", 1), ("t11", 1)] {
+            tasks[id]?.priority = size
+        }
         let history: [(String, String, String?, ParkReason?, Int?, Date)] = [
             ("e1", "created", nil, nil, nil, made),
             ("e2", "started", nil, nil, nil, ago(60 * 26)),

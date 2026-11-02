@@ -76,6 +76,13 @@ private struct TaskDetailForm: View {
                         Label(area.name, systemImage: area.symbol).tag(Optional(area.id))
                     }
                 }
+                if task.parentId == nil {
+                    Picker("Büyüklük", selection: sizeBinding) {
+                        ForEach(TaskSize.allCases) { size in
+                            Text(size.title).tag(size)
+                        }
+                    }
+                }
                 Toggle("Tarih", isOn: dateToggle(\.dueAt))
                 if task.dueAt != nil {
                     DatePicker("Ne zaman", selection: dateBinding(\.dueAt))
@@ -87,6 +94,8 @@ private struct TaskDetailForm: View {
             } footer: {
                 if task.dueAt != nil, store.calendarSyncEnabled {
                     Text("Bu görev PickUp takviminde de görünür.")
+                } else if task.parentId == nil {
+                    Text("Büyük işler şehirde daha gösterişli binalar olur.")
                 }
             }
 
@@ -224,6 +233,13 @@ private struct TaskDetailForm: View {
         Binding(
             get: { task.areaId },
             set: { newValue in Task { await store.edit(task) { $0.areaId = newValue } } }
+        )
+    }
+
+    private var sizeBinding: Binding<TaskSize> {
+        Binding(
+            get: { task.size },
+            set: { newValue in Task { await store.edit(task) { $0.priority = newValue.rawValue } } }
         )
     }
 

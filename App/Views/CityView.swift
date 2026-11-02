@@ -128,10 +128,13 @@ private struct CityCanvas: View {
         let size: Int
     }
 
+    /// One district per area, in a planned grid: offices at the back, banks to the right,
+    /// homes to the left, sports in front, other areas after them. A lane of road runs
+    /// between districts, so every kind of building keeps to its own neighbourhood.
     private var layout: (plots: [Plot], districts: [District]) {
-        var groups: [(Area?, [CityBuilding])] = areas.map { area in
-            (area, city.buildings.filter { $0.areaId == area.id })
-        }
+        var groups: [(Area?, [CityBuilding])] = areas
+            .sorted { (CityKind(area: $0).order, $0.sort) < (CityKind(area: $1).order, $1.sort) }
+            .map { area in (area, city.buildings.filter { $0.areaId == area.id }) }
         let known = Set(areas.map(\.id))
         groups.append((nil, city.buildings.filter { $0.areaId == nil || !known.contains($0.areaId!) }))
         groups = groups.filter { !$0.1.isEmpty }
@@ -143,7 +146,9 @@ private struct CityCanvas: View {
             let oi = (index % 2) * (size + 1)
             let oj = (index / 2) * (size + 1)
             districts.append(District(area: group.0, originI: oi, originJ: oj, size: size))
-            for (n, building) in group.1.enumerated() {
+            // Big buildings take the back plots so they do not hide the small ones.
+            let ordered = group.1.sorted { ($0.size.rawValue, $1.createdAt) > ($1.size.rawValue, $0.createdAt) }
+            for (n, building) in ordered.enumerated() {
                 plots.append(Plot(building: building, i: oi + n % size, j: oj + n / size))
             }
         }
@@ -174,7 +179,15 @@ private struct CityCanvas: View {
         let top = minY - buildingHeight
         let offset = CGPoint(x: -minX, y: -top)
 
+        let maxI = CGFloat(districts.map { $0.originI + $0.size }.max() ?? 0)
+        let maxJ = CGFloat(districts.map { $0.originJ + $0.size }.max() ?? 0)
+        let road = [point(-0.5, -0.5), point(maxI - 0.5, -0.5), point(maxI - 0.5, maxJ - 0.5), point(-0.5, maxJ - 0.5)]
+            .map { CGPoint(x: $0.x + offset.x, y: $0.y + offset.y) }
+
         ZStack(alignment: .topLeading) {
+            // The road network: the ground between districts.
+            Path { path in path.addLines(road); path.closeSubpath() }
+                .fill(Color.secondary.opacity(0.12))
             ForEach(districts.indices, id: \.self) { index in
                 let d = districts[index]
                 let s = CGFloat(d.size), i = CGFloat(d.originI), j = CGFloat(d.originJ)
@@ -183,7 +196,9 @@ private struct CityCanvas: View {
                     .map { CGPoint(x: $0.x + offset.x, y: $0.y + offset.y) }
                 let tint = d.area?.tint ?? .gray
                 Path { path in path.addLines(quad); path.closeSubpath() }
-                    .fill(tint.opacity(0.12))
+                    .fill(Color(uiColor: .systemBackground))
+                Path { path in path.addLines(quad); path.closeSubpath() }
+                    .fill(tint.opacity(0.14))
                 Path { path in path.addLines(quad); path.closeSubpath() }
                     .stroke(tint.opacity(0.35), lineWidth: 1)
                 if let area = d.area {
@@ -230,9 +245,12 @@ struct CityBuildingImage: View {
     var height: CGFloat { width * Self.aspect }
 
     var body: some View {
-        Image("city-\(CityTheme.current)-\(building.art.rawValue)")
+        Image(building.imageName)
             .resizable()
             .scaledToFit()
+            // Moved in: warm light in the windows.
+            .brightness(building.art == .occupied ? 0.04 : 0)
+            .shadow(color: building.art == .occupied ? .orange.opacity(0.45) : .clear, radius: width * 0.06)
             .saturation(building.stage == .stalled ? 0.7 : 1)
             .opacity(building.stage == .planned ? 0.55 : 1)
             .frame(width: width, height: height)
@@ -267,12 +285,6 @@ struct CityBuildingImage: View {
         default: return nil
         }
     }
-}
-
-/// The artwork set in use. Each theme ships the same stages as `city-<theme>-<stage>` images,
-/// so the look of the city can change without touching the rules.
-enum CityTheme {
-    static let current = "konut"
 }
 
 // MARK: - Building sheet

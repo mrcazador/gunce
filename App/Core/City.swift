@@ -16,13 +16,14 @@ struct CityBuilding: Identifiable, Hashable {
         case finished
     }
 
-    /// The artwork for where the building stands, from the foundation to moving in.
+    /// Where the building stands, from the foundation to moving in.
     enum Art: String {
         case foundation = "temel"
         case groundFloor = "kat1"
         case upperFloor = "kat2"
         case shell = "kaba"
         case finished = "final"
+        /// Lived in: the finished building, lit up warmly.
         case occupied = "iskan"
         case stalled = "durmus"
     }
@@ -46,9 +47,22 @@ struct CityBuilding: Identifiable, Hashable {
         }
     }
 
+    /// Asset name: `city-temel` for every plot, `city-<kind>-<stage>` while building, and
+    /// `city-<kind>-final<size>` once finished, so a big task ends as a grander building.
+    var imageName: String {
+        switch art {
+        case .foundation: "city-temel"
+        case .finished, .occupied: "city-\(kind.rawValue)-final\(size.rawValue)"
+        default: "city-\(kind.rawValue)-\(art.rawValue)"
+        }
+    }
+
     let id: String
     let title: String
     let areaId: String?
+    /// The kind of building, from the task's area.
+    let kind: CityKind
+    let size: TaskSize
     let stage: Stage
     /// How much of the building stands, 0…1: the share of steps done, or a fixed amount
     /// for tasks without steps.
@@ -64,6 +78,42 @@ struct CityBuilding: Identifiable, Hashable {
     let isLandmark: Bool
     let parkNote: String?
     let createdAt: Date
+}
+
+/// Each area builds its own kind of building in its own district: homes for Hayat, glass
+/// offices for İş, sports halls for Spor and banks for Yatırım. Areas added later build homes.
+enum CityKind: String, CaseIterable {
+    case work = "is"
+    case investment = "yatirim"
+    case life = "hayat"
+    case sport = "spor"
+
+    init(area: Area?) {
+        guard let area else { self = .life; return }
+        switch area.symbol {
+        case "briefcase", "briefcase.fill": self = .work
+        case "chart.line.uptrend.xyaxis": self = .investment
+        case "figure.run": self = .sport
+        case "heart", "heart.fill": self = .life
+        default:
+            switch area.name.lowercased(with: Locale(identifier: "tr")) {
+            case "iş": self = .work
+            case "yatırım": self = .investment
+            case "spor": self = .sport
+            default: self = .life
+            }
+        }
+    }
+
+    /// Districts are laid out back to front in this order: the tall offices stand behind.
+    var order: Int {
+        switch self {
+        case .work: 0
+        case .investment: 1
+        case .life: 2
+        case .sport: 3
+        }
+    }
 }
 
 enum CityLevel: Int, CaseIterable {
@@ -141,6 +191,8 @@ extension AppStore {
                 id: task.id,
                 title: task.title,
                 areaId: task.areaId,
+                kind: CityKind(area: area(task.areaId)),
+                size: task.size,
                 stage: stage,
                 progress: built,
                 stepsDone: steps.done,
