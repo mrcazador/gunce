@@ -152,7 +152,7 @@ struct TaskRow: View {
 
     private var statusSymbol: String {
         if task.isDoneThisRound() { return "checkmark.circle.fill" }
-        switch task.status {
+        return switch task.status {
         case .active: "play.circle.fill"
         case .parked: "pause.circle"
         case .inbox: "circle"

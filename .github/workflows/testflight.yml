@@ -280,7 +280,7 @@ jobs:
             -scheme Gunce \
             -destination "id=$udid" \
             -resultBundlePath "$RUNNER_TEMP/ui.xcresult" \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=NO 2>&1 \
             | tee "$RUNNER_TEMP/test.log" | grep -E "error:|Test Case .* (passed|failed)|TEST (SUCCEEDED|FAILED)" || true
           test -d "$RUNNER_TEMP/ui.xcresult" || { tail -200 "$RUNNER_TEMP/test.log"; exit 1; }
           if grep -q "Testing cancelled because the build failed" "$RUNNER_TEMP/test.log"; then
