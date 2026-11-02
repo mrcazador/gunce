@@ -23,17 +23,21 @@ struct CityView: View {
                         description: Text("İlk görevini ekle; arsası hemen ayrılır.")
                     )
                 } else {
-                    ScrollView([.horizontal, .vertical]) {
-                        CityCanvas(city: city, areas: store.sortedAreas, tile: tileWidth) { selected = $0 }
-                            .padding(40)
+                    GeometryReader { proxy in
+                        ScrollView([.horizontal, .vertical]) {
+                            CityCanvas(city: city, areas: store.sortedAreas, tile: tileWidth) { selected = $0 }
+                                .padding(40)
+                                // Small cities sit in the middle instead of the top-left corner.
+                                .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
+                        }
+                        .defaultScrollAnchor(.center)
+                        .scrollIndicators(.hidden)
+                        .gesture(
+                            MagnifyGesture()
+                                .updating($pinch) { value, state, _ in state = value.magnification }
+                                .onEnded { value in zoom = min(2.2, max(0.5, zoom * value.magnification)) }
+                        )
                     }
-                    .defaultScrollAnchor(.center)
-                    .scrollIndicators(.hidden)
-                    .gesture(
-                        MagnifyGesture()
-                            .updating($pinch) { value, state, _ in state = value.magnification }
-                            .onEnded { value in zoom = min(2.2, max(0.5, zoom * value.magnification)) }
-                    )
                 }
             }
             .navigationTitle("Şehir")
@@ -45,7 +49,7 @@ struct CityView: View {
     }
 
     private var tileWidth: CGFloat {
-        110 * min(2.2, max(0.5, zoom * pinch))
+        78 * min(2.2, max(0.5, zoom * pinch))
     }
 }
 
@@ -146,9 +150,13 @@ private struct CityCanvas: View {
         return (plots, districts)
     }
 
-    /// Screen point of the centre of tile (i, j) in the 2:1 isometric grid.
+    /// Plots sit this many tile widths apart, leaving a lane between buildings.
+    private static let spacing: CGFloat = 1.4
+
+    /// Screen point of the centre of plot (i, j) in the 2:1 isometric grid.
     private func point(_ i: CGFloat, _ j: CGFloat) -> CGPoint {
-        CGPoint(x: (i - j) * tile / 2, y: (i + j) * tile / 4)
+        let step = tile * Self.spacing
+        return CGPoint(x: (i - j) * step / 2, y: (i + j) * step / 4)
     }
 
     var body: some View {
@@ -199,7 +207,7 @@ private struct CityCanvas: View {
                 .accessibilityLabel(CityText.accessibility(plot.building))
             }
         }
-        .frame(width: maxX - minX, height: maxY - top + tile / 4)
+        .frame(width: maxX - minX, height: maxY - top + tile / 2)
     }
 }
 
