@@ -6,7 +6,7 @@ import SwiftUI
 struct CityView: View {
     @Environment(AppStore.self) private var store
     @State private var selected: CityBuilding?
-    @State private var zoom: CGFloat = 1
+    @State private var zoom: CGFloat = 0.75
     @GestureState private var pinch: CGFloat = 1
 
     var body: some View {

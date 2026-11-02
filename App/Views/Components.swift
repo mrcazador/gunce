@@ -86,6 +86,8 @@ struct ParkNoteText: View {
     var body: some View {
         Text(note)
             .font(.parkNote)
+            // The app uses rounded type; park notes keep their serif signature.
+            .fontDesign(.serif)
             .foregroundStyle(.secondary)
             .accessibilityLabel("Kaldığın yer: \(note)")
     }

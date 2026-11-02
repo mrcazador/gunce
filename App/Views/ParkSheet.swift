@@ -17,6 +17,7 @@ struct ParkSheet: View {
                 Section {
                     TextField("Bir cümleyle: nerede kaldın?", text: $note, axis: .vertical)
                         .font(.parkNote)
+                        .fontDesign(.serif)
                         .lineLimit(2...5)
                         .focused($noteFocused)
                 } header: {
