@@ -180,7 +180,7 @@ struct TaskSwipeActions: ViewModifier {
         content
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if task.parentId == nil, task.status == .inbox || task.status == .parked {
-                    Button(task.status == .parked ? "Şantiyeye dön" : "Başla", systemImage: "play") {
+                    Button(task.status == .parked ? "Şantiyeye dön" : "Temeli at", systemImage: "play") {
                         store.requestStart(task)
                     }
                     .tint(Color.primary)

@@ -9,7 +9,7 @@ struct TasksView: View {
         NavigationStack {
             List {
                 Picker("Görünüm", selection: $showDone) {
-                    Text("Şantiyede").tag(false)
+                    Text("Açık").tag(false)
                     Text("Teslim edilen").tag(true)
                 }
                 .pickerStyle(.segmented)
@@ -40,6 +40,12 @@ struct TasksView: View {
                         "Henüz görev yok",
                         systemImage: "checklist",
                         description: Text("Aklına geleni aşağıdaki alana yaz.")
+                    )
+                } else if showDone, !store.tasks.values.contains(where: { $0.parentId == nil && $0.status == .done }) {
+                    ContentUnavailableView(
+                        "Henüz teslim ettiğin bina yok",
+                        systemImage: "building.2",
+                        description: Text("“Teslim et” dediğin işler burada ve şehrinde görünür.")
                     )
                 }
             }

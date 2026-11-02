@@ -13,6 +13,8 @@ struct TodayView: View {
     @State private var day = Calendar.current.startOfDay(for: .now)
     @State private var events: [EKEvent] = []
     @AppStorage("pickup.today.week") private var showsWeek = false
+    /// Opened from "Haftayı gör": start on the week, whatever was shown last.
+    var startsInWeek = false
 
     var body: some View {
         List {
@@ -109,6 +111,7 @@ struct TodayView: View {
             }
         }
         .refreshable { await store.refresh() }
+        .onAppear { if startsInWeek { showsWeek = true } }
         .task(id: "\(day.timeIntervalSince1970)-\(showsWeek)") { loadEvents() }
         .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in loadEvents() }
         .onChange(of: store.calendarSyncEnabled) { loadEvents() }

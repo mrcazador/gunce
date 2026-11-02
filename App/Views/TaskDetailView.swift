@@ -109,14 +109,17 @@ private struct TaskDetailForm: View {
                     DatePicker("Hatırlatma", selection: dateBinding(\.remindAt))
                 }
             } footer: {
-                if task.dueAt != nil, store.calendarSyncEnabled {
-                    Text("Bu görev PickUp takviminde de görünür.")
-                } else if task.parentId == nil {
-                    Text("Büyük işler şehirde daha gösterişli binalar olur.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if task.parentId == nil {
+                        Text("Büyüklük, iş bittiğinde şehirde nasıl bir bina olacağını seçer: büyük işler daha gösterişli olur.")
+                    }
+                    if task.dueAt != nil, store.calendarSyncEnabled {
+                        Text("Bu görev PickUp takviminde de görünür.")
+                    }
                 }
             }
 
-            Section("İz") {
+            Section {
                 TextField("Not ekle", text: $newNote, axis: .vertical)
                     .focused($focus, equals: .note)
                     .submitLabel(.done)
@@ -128,6 +131,10 @@ private struct TaskDetailForm: View {
                 ForEach(store.history(of: task.id)) { event in
                     EventRow(event: event)
                 }
+            } header: {
+                Text("İz · geçmiş")
+            } footer: {
+                Text("Başlattığın, durdurduğun ve teslim ettiğin her an burada kalır. Not, kaldığın yeri değiştirmez.")
             }
         }
         .themedBackground()
@@ -294,7 +301,7 @@ private struct TaskDetailForm: View {
             switch task.status {
             case .inbox, .parked:
                 if task.parentId == nil {
-                    ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Başla", symbol: "play.fill", prominent: true) {
+                    ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Temeli at", symbol: "play.fill", prominent: true) {
                         store.requestStart(task)
                     }
                 }

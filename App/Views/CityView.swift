@@ -38,18 +38,21 @@ struct CityView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // While a building is in focus the header steps aside, so the map gets the room.
-                if focusID == nil {
+                if focusID == nil, !city.buildings.isEmpty {
                     CityHeader(city: city) { showStory = true }
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 if city.buildings.isEmpty {
-                    ContentUnavailableView(
-                        "Şehrin boş",
-                        systemImage: "building.2",
-                        description: Text("İlk görevini ekle; arsası hemen ayrılır.")
-                    )
+                    ContentUnavailableView {
+                        Label("Şehrin boş", systemImage: "building.2")
+                    } description: {
+                        Text("İlk görevini yaz; arsası hemen ayrılır.")
+                    } actions: {
+                        Button("Görev ekle") { store.captureRequest = CaptureRequest() }
+                            .buttonStyle(.borderedProminent)
+                    }
                 } else {
                     GeometryReader { proxy in
                         let focused = focusOffset(layout, map: proxy.frame(in: .global))
@@ -259,6 +262,15 @@ private struct CityStorySheet: View {
                     }
                 }
 
+                Section("Nasıl büyür?") {
+                    Label("Her iş bir bina, her tamamlanan adım bir kat.", systemImage: "building.2")
+                    Label("3 gün adım atılmazsa vinç durur, 7 günde şantiye terk edilir. Bir adım onu yeniden başlatır.", systemImage: "pause.circle")
+                    Label("Büyüklük (Ufak, Orta, Büyük) teslim edilen binanın ne kadar gösterişli olacağını seçer.", systemImage: "square.stack.3d.up")
+                    Label("Uzun bekleyip sonunda teslim ettiğin iş anıt yapı olur.", systemImage: "star")
+                    Label("Teslimden iki gün sonra binaya taşınılır, ışıkları yanar.", systemImage: "lightbulb")
+                }
+                .font(.subheadline)
+
                 if !city.stalled.isEmpty {
                     Section {
                         ForEach(city.stalled) { building in
@@ -280,7 +292,7 @@ private struct CityStorySheet: View {
                     } header: {
                         Text("Duran inşaatlar")
                     } footer: {
-                        Text("3 gün hiç madde tamamlanmayan inşaat durur, 7 günde terk edilir. Bir madde tamamlamak onu yeniden başlatır.")
+                        Text("Bir binaya dokunursan harita ona yaklaşır.")
                     }
                 }
             }
@@ -858,7 +870,7 @@ private struct CityBuildingSheet: View {
                 }
 
                 if live.stepsTotal > 0 {
-                    BrickProgress(done: live.stepsDone, total: live.stepsTotal, label: "\(live.stepsTotal) katın \(live.stepsDone) tanesi çıktı")
+                    BrickProgress(done: live.stepsDone, total: live.stepsTotal, label: "\(live.stepsTotal) adımın \(live.stepsDone) tanesi bitti")
                 }
 
                 if let note = live.parkNote, !note.isEmpty, live.stage != .finished {
@@ -872,7 +884,7 @@ private struct CityBuildingSheet: View {
 
                 if !steps.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Maddeler · \(live.stepsDone)/\(live.stepsTotal)")
+                        Text("Adımlar · \(live.stepsDone)/\(live.stepsTotal) kat")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 4)
@@ -894,7 +906,7 @@ private struct CityBuildingSheet: View {
                                 }
                             }
                         default:
-                            ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Başla", symbol: "play.fill", prominent: true) {
+                            ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Temeli at", symbol: "play.fill", prominent: true) {
                                 dismiss()
                                 Task {
                                     try? await Task.sleep(for: .milliseconds(350))
@@ -915,7 +927,7 @@ private struct CityBuildingSheet: View {
                 .frame(minHeight: 44)
 
                 if live.stage == .abandoned {
-                    Text("Bir madde tamamlarsan inşaat yeniden başlar; bitirirsen şehrin anıt yapılarından biri olur.")
+                    Text("Bir adım tamamlarsan inşaat yeniden başlar; bitirirsen şehrin anıt yapılarından biri olur.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -966,11 +978,15 @@ enum CityText {
         case .rising:
             return b.stepsTotal > 0 ? "Kat \(b.stepsDone)/\(b.stepsTotal) · inşaat sürüyor" : "İnşaat sürüyor"
         case .stalled:
-            return "\(b.idleDays) gündür madde tamamlanmadı; inşaat duruyor"
+            return b.stepsTotal > 0
+                ? "\(b.idleDays) gündür adım tamamlanmadı; inşaat duruyor"
+                : "\(b.idleDays) gündür el sürülmedi; inşaat duruyor"
         case .abandoned:
-            return "\(b.idleDays) gündür madde tamamlanmadı; terk edilmiş"
+            return b.stepsTotal > 0
+                ? "\(b.idleDays) gündür adım tamamlanmadı; terk edilmiş"
+                : "\(b.idleDays) gündür el sürülmedi; terk edilmiş"
         case .finished:
-            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra bitirdin." : "Tamamlandı"
+            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra teslim ettin." : "\(b.size.title) bina · teslim edildi"
         }
     }
 

@@ -27,11 +27,27 @@ struct NowView: View {
                 Section {
                     if let task = store.activeTask {
                         ActiveTaskCard(task: task)
+                    } else if let waiting = store.parkedTasks.first {
+                        // Nothing in hand: the site waiting longest is the obvious next step.
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Elinde iş yok. En uzun bekleyen şantiye:")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text(waiting.title)
+                                .font(.title3.weight(.semibold))
+                            if let note = waiting.parkNote, !note.isEmpty {
+                                ParkNoteText(note: note)
+                            }
+                            ActionButton(title: "Şantiyeye dön", symbol: "play.fill", prominent: true) {
+                                store.requestStart(waiting)
+                            }
+                        }
+                        .padding(.vertical, 8)
                     } else {
                         ContentUnavailableView(
-                            "Şu an aktif görev yok",
+                            "Elinde iş yok",
                             systemImage: "cup.and.saucer",
-                            description: Text("Kaldığın yerlerden birine devam et ya da aklına geleni aşağıya yaz.")
+                            description: Text("Aklına geleni aşağıdaki çubuğa yaz, sonra “Temeli at” ile ele al.")
                         )
                     }
                 }
@@ -49,8 +65,19 @@ struct NowView: View {
                 if !store.inboxTasks.isEmpty {
                     Section("Gelen kutusu") {
                         ForEach(store.inboxTasks.prefix(5)) { task in
-                            NavigationLink(value: task.id) {
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
                                 TaskRow(task: task)
+                                Spacer(minLength: 0)
+                                Button("Temeli at") { store.requestStart(task) }
+                                    .buttonStyle(.bordered)
+                                    .buttonBorderShape(.capsule)
+                                    .frame(minHeight: 44)
+                                    .accessibilityHint("Bu görevi elindeki iş yapar")
+                            }
+                            // The whole row opens the task; the button stays tappable.
+                            .background {
+                                NavigationLink(value: task.id) { EmptyView() }
+                                    .opacity(0)
                             }
                             .taskSwipeActions(task)
                         }
@@ -114,7 +141,7 @@ private struct TodaySection: View {
                 NavigationLink(value: oldest.id) {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(stalled.count) açık inşaat duruyor")
+                            Text("\(stalled.count) inşaat duruyor")
                             Text("En eskisi: \(oldest.title), \(oldest.idleDays) gün")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -126,7 +153,7 @@ private struct TodaySection: View {
                 }
             }
             NavigationLink {
-                TodayView()
+                TodayView(startsInWeek: true)
             } label: {
                 Label("Haftayı gör", systemImage: "calendar")
             }
@@ -385,7 +412,7 @@ private struct ParkedRow: View {
             }
             let idle = Calendar.current.dateComponents([.day], from: store.lastProgress(of: task), to: .now).day ?? 0
             if idle >= AppStore.stalledAfterDays {
-                Label("\(idle) gündür madde yok", systemImage: "pause.circle")
+                Label("\(idle) gündür adım yok", systemImage: "pause.circle")
                     .foregroundStyle(Color.orange)
             } else if let parked = task.parkedAt {
                 Text(parked, format: .relative(presentation: .named))

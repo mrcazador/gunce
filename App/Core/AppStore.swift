@@ -8,7 +8,7 @@ struct CaptureRequest: Identifiable {
     var dueAt: Date? = nil
 }
 
-/// A request to park a task, optionally starting another one right after (a switch).
+/// The last "Teslim et", offered back for a few seconds.
 struct CompletionUndo: Identifiable {
     let id = UUID()
     let task: TaskItem
@@ -16,6 +16,7 @@ struct CompletionUndo: Identifiable {
     let wasActive: Bool
 }
 
+/// A request to park a task, optionally starting another one right after (a switch).
 struct ParkRequest: Identifiable {
     let id = UUID()
     let task: TaskItem
@@ -564,7 +565,7 @@ final class AppStore {
             let calendar = Calendar.current
             var when = calendar.date(bySettingHour: 9, minute: 30, second: 0, of: .now) ?? .now
             if when <= .now { when = calendar.date(byAdding: .day, value: 1, to: when) ?? when }
-            var body = "\(oldest.idleDays) gündür madde tamamlanmadı."
+            var body = "\(oldest.idleDays) gündür adım atılmadı."
             if let note = task.parkNote, !note.isEmpty { body += " Kaldığın yer: \(note)" }
             items.append(.init(taskID: task.id, title: task.title, body: body, date: when, isDue: false, isNudge: true))
         }

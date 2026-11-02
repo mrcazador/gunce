@@ -15,7 +15,7 @@ struct ClaudeConnectView: View {
     var body: some View {
         Form {
             Section {
-                Text("Claude görevlerini okuyabilir, yeni görev ekleyebilir, başlatıp park edebilir ve bitirebilir. Claude'un eklediği görevler gelen kutuna düşer.")
+                Text("Claude görevlerini okuyabilir, yeni görev ekleyebilir, başlatıp inşaatını durdurabilir ve teslim edebilir. Claude'un eklediği görevler gelen kutuna düşer.")
                     .foregroundStyle(.secondary)
             }
 
