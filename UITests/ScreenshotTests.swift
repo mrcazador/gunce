@@ -96,6 +96,10 @@ final class ScreenshotTests: XCTestCase {
 
         if tap(app.tabBars.buttons["Bugün"].firstMatch) {
             snap("\(prefix)-11-bugun")
+            if tap(app.tabBars.buttons["Şehir"].firstMatch) {
+                snap("\(prefix)-11c-sehir")
+                tap(app.tabBars.buttons["Bugün"].firstMatch)
+            }
             if tap(app.buttons["Hafta"].firstMatch) {
                 snap("\(prefix)-11b-hafta")
                 tap(app.buttons["Gün"].firstMatch)

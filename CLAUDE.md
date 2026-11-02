@@ -44,12 +44,17 @@ and fix it.
 - Reminders are app notifications (Said no longer uses Apple Reminders). Calendar sync is both
   ways: timed tasks go to a dedicated "PickUp" calendar, and calendar events appear in "Bugün".
 - Tasks Claude creates have `created_via = 'claude'`.
+- **Şehir** (gamification): every top-level task is a building, derived from tasks and İz only
+  (`App/Core/City.swift`, nothing entered by hand). Steps raise floors; parked 3+ days = stalled,
+  7+ days = abandoned (never destroyed); finished after a week-long wait = landmark. Levels: Bina,
+  Site (5), Mahalle (15), Şehir (40) finished buildings. It is its own world: no real-life rewards.
+  Artwork is isometric and warm, per theme in the asset catalog (`city-<theme>-…`).
 
 ## Design rules
 
 Design source: the "Günce — ekran taslakları" canvas. Follow Apple HIG; use system components.
 
-- Navigation: tab bar with **Şimdi, Görevler, Bugün** + a separate search tab. A floating capture
+- Navigation: tab bar with **Şimdi, Görevler, Bugün, Şehir** + a separate search tab. A floating capture
   bar ("Aklına geleni yaz…") sits above the tab bar (`tabViewBottomAccessory`).
 - Liquid Glass only on floating chrome (tab bar, capture bar), never on content.
 - App accent is near-black (`.primary`). Color means *area* only:
