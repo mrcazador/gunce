@@ -100,7 +100,7 @@ struct ActiveTaskWidgetView: View {
 
     @ViewBuilder
     private var idle: some View {
-        let parked = snapshot.parkedCount > 0 ? "\(snapshot.parkedCount) park edilmiş" : "Aklına geleni yaz"
+        let parked = snapshot.parkedCount > 0 ? "\(snapshot.parkedCount) duran şantiye" : "Aklına geleni yaz"
         switch family {
         case .accessoryInline:
             Label("Aktif görev yok", systemImage: "bookmark")
@@ -244,7 +244,7 @@ private struct ActiveButtons: View {
                 WidgetButtonLabel(title: "Teslim et", symbol: "checkmark", prominent: firstStep == nil)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Görevi bitir")
+            .accessibilityLabel("Teslim et")
         }
         .frame(width: 112)
     }
@@ -328,7 +328,7 @@ private struct IdleHero: View {
                         .widgetAccentable()
                     Text("Aklına geleni yaz")
                         .font(.headline)
-                    Text("Aktif ya da park edilmiş görev yok")
+                    Text("Aktif ya da duran şantiye yok")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -421,7 +421,7 @@ struct LargeWidgetView: View {
     private func parkedSection(_ items: [LockScreenSnapshot.Parked]) -> some View {
         if !items.isEmpty {
             Divider()
-            SectionTitle(text: "Park'ta bekleyenler")
+            SectionTitle(text: "Duran şantiyeler")
             ForEach(items.prefix(3)) { item in
                 ParkedLink(item: item)
             }

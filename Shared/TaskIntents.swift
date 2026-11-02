@@ -3,7 +3,7 @@ import AppIntents
 /// "Bitti" on the Live Activity. Live Activity intents run in the app's process,
 /// so `IntentBridge` here is the app's implementation (the widget has a stub).
 struct CompleteTaskIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "Görevi bitir"
+    static var title: LocalizedStringResource = "Teslim et"
     static var isDiscoverable: Bool = false
 
     @Parameter(title: "Görev")

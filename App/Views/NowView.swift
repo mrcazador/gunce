@@ -10,6 +10,20 @@ struct NowView: View {
         @Bindable var store = store
         NavigationStack {
             List {
+                // Offline: changes are kept on the phone and sent when the connection is back.
+                if store.isOffline || !store.outbox.isEmpty {
+                    Label {
+                        Text(store.outbox.isEmpty
+                             ? "Çevrimdışı · bağlantı gelince eşitlenecek"
+                             : "Çevrimdışı · \(store.outbox.count) değişiklik bağlantı gelince gönderilecek")
+                    } icon: {
+                        Image(systemName: "icloud.slash")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .listRowBackground(Color.clear)
+                }
+
                 Section {
                     if let task = store.activeTask {
                         ActiveTaskCard(task: task)
@@ -89,7 +103,7 @@ private struct TodaySection: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            ForEach(items.prefix(4)) { item in
+            ForEach(items.prefix(5)) { item in
                 if let id = item.taskID {
                     NavigationLink(value: id) { row(item) }
                 } else {
@@ -126,7 +140,7 @@ private struct TodaySection: View {
 
     private func row(_ item: Item) -> some View {
         HStack(spacing: 12) {
-            Text(item.allDay ? "Tüm gün" : StartTime.clock(item.time))
+            Text(item.time == .distantPast ? "Geçti" : item.allDay ? "Tüm gün" : StartTime.clock(item.time))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 52, alignment: .leading)
@@ -136,7 +150,7 @@ private struct TodaySection: View {
             Spacer(minLength: 0)
             Text(item.source)
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(item.time == .distantPast ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tertiary))
         }
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
@@ -157,6 +171,11 @@ private struct TodaySection: View {
         let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
         var items: [Item] = []
         for task in store.tasks.values where task.status.isOpen && task.deletedAt == nil {
+            // Overdue work comes first, so it is not left behind in the week view.
+            if let due = task.dueAt, due < start {
+                items.append(Item(id: task.id, time: .distantPast, allDay: true, title: task.title, source: "Gecikmiş", taskID: task.id))
+                continue
+            }
             let times = [task.dueAt, task.remindAt].compactMap { $0 }.filter { calendar.isDateInToday($0) }
             if let first = times.min() {
                 items.append(Item(id: task.id, time: first, allDay: false, title: task.title, source: "Görev", taskID: task.id))
@@ -179,13 +198,17 @@ private struct TodaySection: View {
 
 private struct ActiveTaskCard: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let task: TaskItem
+    /// Each time Şimdi opens, the building stretches up and settles, as if work just resumed.
+    @State private var beat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // The task's building in Şehir, as it stands right now.
             if let building = store.city().buildings.first(where: { $0.id == task.id }) {
                 CityBuildingImage(building: building, tileWidth: 96)
+                    .modifier(CityDance(move: 2, beat: beat))
                     .frame(maxWidth: .infinity)
                     .frame(height: 180, alignment: .bottom)
                     .accessibilityLabel(CityText.accessibility(building))
@@ -234,12 +257,12 @@ private struct ActiveTaskCard: View {
                     Text(next)
                 }
             } else if progress.total > 0 {
-                Label("Tüm adımlar bitti", systemImage: "checkmark.seal")
+                Label("Tüm katlar çıktı; teslim edebilirsin", systemImage: "checkmark.seal")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if note.isEmpty {
-                FirstStepField(task: task)
             }
+            // A new step can always be added here, not only the first one.
+            FirstStepField(task: task, isFirst: progress.total == 0)
 
             ActionRow {
                 ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
@@ -252,6 +275,9 @@ private struct ActiveTaskCard: View {
         }
         // Take the full height at large text sizes instead of squeezing rows together.
         .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            if !reduceMotion { beat += 1 }
+        }
         .padding(.vertical, 8)
     }
 }
@@ -260,6 +286,7 @@ private struct ActiveTaskCard: View {
 private struct FirstStepField: View {
     @Environment(AppStore.self) private var store
     let task: TaskItem
+    var isFirst = true
     @State private var text = ""
     @FocusState private var focused: Bool
 
@@ -268,12 +295,12 @@ private struct FirstStepField: View {
             Image(systemName: "plus.circle")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            TextField("İlk adımı yaz", text: $text)
+            TextField(isFirst ? "İlk adımı yaz" : "Adım ekle", text: $text)
                 .focused($focused)
                 .submitLabel(.done)
                 .onSubmit(add)
-                .accessibilityLabel("İlk adım")
-                .accessibilityHint("Yazdığın metin görevin ilk adımı olur")
+                .accessibilityLabel(isFirst ? "İlk adım" : "Yeni adım")
+                .accessibilityHint("Yazdığın metin görevin sonuna yeni bir adım olarak eklenir")
         }
         .frame(minHeight: 44)
     }
@@ -364,7 +391,11 @@ private struct ParkedRow: View {
             if showReason, let reason = task.parkReason {
                 Label(reason.title, systemImage: reason.symbol)
             }
-            if let parked = task.parkedAt {
+            let idle = Calendar.current.dateComponents([.day], from: store.lastProgress(of: task), to: .now).day ?? 0
+            if idle >= AppStore.stalledAfterDays {
+                Label("\(idle) gündür madde yok", systemImage: "pause.circle")
+                    .foregroundStyle(Color.orange)
+            } else if let parked = task.parkedAt {
                 Text(parked, format: .relative(presentation: .named))
             }
     }

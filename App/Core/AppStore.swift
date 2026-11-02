@@ -9,6 +9,13 @@ struct CaptureRequest: Identifiable {
 }
 
 /// A request to park a task, optionally starting another one right after (a switch).
+struct CompletionUndo: Identifiable {
+    let id = UUID()
+    let task: TaskItem
+    let stepIDs: [String]
+    let wasActive: Bool
+}
+
 struct ParkRequest: Identifiable {
     let id = UUID()
     let task: TaskItem
@@ -91,7 +98,9 @@ final class AppStore {
     var parkedTasks: [TaskItem] {
         tasks.values
             .filter { $0.status == .parked && $0.parentId == nil }
-            .sorted { ($0.parkedAt ?? $0.updatedAt) > ($1.parkedAt ?? $1.updatedAt) }
+            // The site waiting longest for its next step comes first, so postponed work does
+            // not sink below what was parked a minute ago.
+            .sorted { lastProgress(of: $0) < lastProgress(of: $1) }
     }
 
     var inboxTasks: [TaskItem] {
@@ -209,6 +218,7 @@ final class AppStore {
         tasks = [:]
         events = [:]
         syncCursor = nil
+        outbox = []
         try? FileManager.default.removeItem(at: Self.snapshotURL)
         Task { await LockScreen.update(.empty) }
     }
@@ -217,6 +227,11 @@ final class AppStore {
 
     func refresh() async {
         guard let api, isSignedIn, !isSyncing else { return }
+        // Changes made offline go out before the server's copy comes in.
+        if !outbox.isEmpty {
+            await flushOutbox()
+            guard outbox.isEmpty else { return }
+        }
         isSyncing = true
         defer { isSyncing = false }
         do {
@@ -282,15 +297,12 @@ final class AppStore {
         if let parentId { body["parent_id"] = parentId }
         if let dueAt { body["due_at"] = JSONCoding.formatDate(dueAt) }
         captures += 1
-        await optimistic {
+        await optimistic(PendingRequest("POST", "v1/tasks", body: body)) {
             localInsert(id: id, title: trimmed, areaId: areaId, parentId: parentId)
             localSet(id) {
                 $0.sort = sort
                 $0.dueAt = dueAt
             }
-        } send: { api in
-            let result = try await api.request("POST", "v1/tasks", body: body, as: TaskEnvelope.self)
-            self.upsert(result.task)
         }
     }
 
@@ -309,34 +321,37 @@ final class AppStore {
 
     func start(_ task: TaskItem, previousNote: String?, previousReason: ParkReason?) async {
         var body: [String: Any] = ["source": "app"]
-        if let previousNote { body["previous_note"] = JSONCoding.value(previousNote) }
+        // Sent as typed: an empty note clears the old one instead of keeping it.
+        if let previousNote { body["previous_note"] = previousNote.trimmingCharacters(in: .whitespacesAndNewlines) }
         if let previousReason { body["previous_reason"] = previousReason.rawValue }
         starts += 1
-        await optimistic {
+        await optimistic(PendingRequest("POST", "v1/tasks/\(task.id)/start", body: body)) {
             localStart(task, previousNote: previousNote, previousReason: previousReason)
-        } send: { api in
-            let result = try await api.request("POST", "v1/tasks/\(task.id)/start", body: body, as: StartResponse.self)
-            self.upsert(result.task)
-            if let parked = result.parked { self.upsert(parked) }
         }
     }
 
     func park(_ task: TaskItem, note: String?, reason: ParkReason, remindAt: Date? = nil) async {
         var body: [String: Any] = ["reason": reason.rawValue, "source": "app"]
-        if let note { body["note"] = JSONCoding.value(note) }
+        if let note { body["note"] = note.trimmingCharacters(in: .whitespacesAndNewlines) }
         if let remindAt { body["remind_at"] = JSONCoding.formatDate(remindAt) }
         parks += 1
-        await optimistic {
+        await optimistic(PendingRequest("POST", "v1/tasks/\(task.id)/park", body: body)) {
             localPark(task.id, note: note, reason: reason)
             if let remindAt { localSet(task.id) { $0.remindAt = remindAt } }
-        } send: { api in
-            try await self.sendTask("POST", "v1/tasks/\(task.id)/park", body: body, api: api)
         }
     }
 
     func complete(_ task: TaskItem, source: String = "app") async {
         completions += 1
-        await optimistic {
+        // A finished task can be taken back for a few seconds ("Geri al").
+        if task.parentId == nil, task.status.isOpen {
+            lastCompletion = CompletionUndo(
+                task: task,
+                stepIDs: subtasks(of: task.id).filter { $0.status.isOpen }.map(\.id),
+                wasActive: task.status == .active
+            )
+        }
+        await optimistic(PendingRequest("POST", "v1/tasks/\(task.id)/complete", body: ["source": source])) {
             for id in [task.id] + subtasks(of: task.id).map(\.id) {
                 localSet(id) {
                     guard $0.status.isOpen else { return }
@@ -344,27 +359,38 @@ final class AppStore {
                     $0.completedAt = .now
                 }
             }
-        } send: { api in
-            try await self.sendTask("POST", "v1/tasks/\(task.id)/complete", body: ["source": source], api: api)
+        }
+    }
+
+    /// The last finished task, offered back for a few seconds.
+    var lastCompletion: CompletionUndo?
+
+    /// Takes the last "Teslim et" back: the task and the steps it closed open again, and a
+    /// task that was in hand goes back in hand.
+    func undoCompletion() async {
+        guard let undo = lastCompletion else { return }
+        lastCompletion = nil
+        if let task = tasks[undo.task.id] { await reopen(task) }
+        for id in undo.stepIDs {
+            if let step = tasks[id] { await reopen(step) }
+        }
+        if undo.wasActive, activeTask == nil, let task = tasks[undo.task.id] {
+            await start(task, previousNote: nil, previousReason: nil)
         }
     }
 
     func reopen(_ task: TaskItem) async {
-        await optimistic {
+        await optimistic(PendingRequest("POST", "v1/tasks/\(task.id)/reopen", body: ["source": "app"])) {
             localSet(task.id) {
                 $0.status = .inbox
                 $0.completedAt = nil
             }
-        } send: { api in
-            try await self.sendTask("POST", "v1/tasks/\(task.id)/reopen", body: ["source": "app"], api: api)
         }
     }
 
     func archive(_ task: TaskItem) async {
-        await optimistic {
+        await optimistic(PendingRequest("POST", "v1/tasks/\(task.id)/archive", body: ["source": "app"])) {
             localSet(task.id) { $0.status = .archived }
-        } send: { api in
-            try await self.sendTask("POST", "v1/tasks/\(task.id)/archive", body: ["source": "app"], api: api)
         }
     }
 
@@ -375,10 +401,8 @@ final class AppStore {
         change(&edited)
         let fields = Self.changedFields(from: current, to: edited)
         guard !fields.isEmpty else { return }
-        await optimistic {
+        await optimistic(PendingRequest("PATCH", "v1/tasks/\(task.id)", body: fields)) {
             localSet(task.id) { $0 = edited }
-        } send: { api in
-            try await self.sendTask("PATCH", "v1/tasks/\(task.id)", body: fields, api: api)
         }
     }
 
@@ -407,13 +431,12 @@ final class AppStore {
 
     func addNote(_ note: String, to task: TaskItem) async {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let api, !trimmed.isEmpty else { return }
-        do {
-            try await api.send("POST", "v1/tasks/\(task.id)/notes", body: ["note": trimmed, "source": "app"])
-            await loadHistory(of: task.id)
-        } catch {
-            report(error)
-        }
+        guard !isDemo, api != nil, !trimmed.isEmpty else { return }
+        // Queued like every other change, so a note written offline is not lost.
+        outbox.append(PendingRequest("POST", "v1/tasks/\(task.id)/notes", body: ["note": trimmed, "source": "app"]))
+        saveSnapshot()
+        await flushOutbox()
+        await loadHistory(of: task.id)
     }
 
     func delete(_ task: TaskItem) async {
@@ -422,11 +445,9 @@ final class AppStore {
                 CalendarSync.shared.removeEvent(item.calendarEventId)
             }
         }
-        await optimistic {
+        await optimistic(PendingRequest("DELETE", "v1/tasks/\(task.id)", body: nil)) {
             for sub in subtasks(of: task.id) { tasks[sub.id] = nil }
             tasks[task.id] = nil
-        } send: { api in
-            try await api.send("DELETE", "v1/tasks/\(task.id)")
         }
     }
 
@@ -476,7 +497,7 @@ final class AppStore {
     }
 
     func lockScreenSnapshot() -> LockScreenSnapshot {
-        // parkedTasks is newest first.
+        // parkedTasks is the longest waiting first.
         let parkedList = parkedTasks
             .prefix(3)
             .map { item -> LockScreenSnapshot.Parked in
@@ -537,6 +558,16 @@ final class AppStore {
                 items.append(.init(taskID: task.id, title: task.title, body: body, date: due, isDue: true))
             }
         }
+        // One calm nudge a day, at 09:30, for the site that has waited longest for a step.
+        // It is rebuilt after every change, so it always names today's oldest stalled site.
+        if let oldest = city().stalled.first, let task = tasks[oldest.id], task.status != .active {
+            let calendar = Calendar.current
+            var when = calendar.date(bySettingHour: 9, minute: 30, second: 0, of: .now) ?? .now
+            if when <= .now { when = calendar.date(byAdding: .day, value: 1, to: when) ?? when }
+            var body = "\(oldest.idleDays) gündür madde tamamlanmadı."
+            if let note = task.parkNote, !note.isEmpty { body += " Kaldığın yer: \(note)" }
+            items.append(.init(taskID: task.id, title: task.title, body: body, date: when, isDue: false, isNudge: true))
+        }
         return items
     }
 
@@ -553,7 +584,12 @@ final class AppStore {
         guard let task = tasks[taskID] else { return }
         switch action {
         case Reminders.resumeAction:
-            requestStart(task)
+            // Already in hand: just open it instead of "starting" it again.
+            if task.status == .active {
+                openTaskID = taskID
+            } else {
+                requestStart(task)
+            }
         case Reminders.snoozeAction:
             await edit(task) { $0.remindAt = Date.now.addingTimeInterval(3600) }
         case Reminders.doneAction:
@@ -624,26 +660,59 @@ final class AppStore {
     private(set) var parks = 0
     private(set) var completions = 0
 
-    /// Applies `change` at once with animation, then sends the request. On failure the task
-    /// list is restored and the error shown. Demo runs stop after the local change.
-    private func optimistic(_ change: () -> Void, send: (APIClient) async throws -> Void) async {
+    /// Applies `change` at once with animation, then queues the request and sends the queue.
+    /// Without a connection the change stays on screen and in the queue (saved on disk) until
+    /// the next sync sends it: nothing you typed is lost. Only a change the server refuses is
+    /// rolled back, with its error shown. Demo runs stop after the local change.
+    private func optimistic(_ request: PendingRequest, _ change: () -> Void) async {
         let before = tasks
         withAnimation(.snappy) { change() }
         tasksChanged()
-        guard !isDemo, let api else { return }
-        do {
-            try await send(api)
-            await refresh()
-        } catch {
+        guard !isDemo, api != nil else { return }
+        outbox.append(request)
+        saveSnapshot()
+        let refused = await flushOutbox()
+        if refused.contains(request.id) {
             withAnimation(.snappy) { tasks = before }
-            report(error)
         }
+        await refresh()
     }
 
-    /// Sends a request that returns `{ task }` and applies the server's copy.
-    private func sendTask(_ method: String, _ path: String, body: [String: Any], api: APIClient) async throws {
-        let result = try await api.request(method, path, body: body, as: TaskEnvelope.self)
-        upsert(result.task)
+    /// Changes waiting to reach the server, oldest first.
+    private(set) var outbox: [PendingRequest] = []
+    @ObservationIgnored private var isFlushing = false
+
+    /// Sends queued changes in order and stops at the first connection problem, keeping the
+    /// rest for later. Returns the requests the server refused (dropped, error shown).
+    @discardableResult
+    private func flushOutbox() async -> Set<UUID> {
+        guard let api, !isDemo, !isFlushing else { return [] }
+        isFlushing = true
+        defer { isFlushing = false }
+        var refused: Set<UUID> = []
+        while let next = outbox.first {
+            do {
+                try await api.send(next.method, next.path, body: next.bodyObject)
+            } catch let error as APIError where error.code == "offline" {
+                isOffline = true
+                saveSnapshot()
+                return refused
+            } catch let error as APIError where error.status == 409 && next.method == "POST" && next.path == "v1/tasks" {
+                // Created on an earlier try whose answer never arrived: already done.
+                _ = error
+            } catch is CancellationError {
+                return refused
+            } catch {
+                refused.insert(next.id)
+                report(error)
+                // Local state may now differ from the server's; fetch everything again.
+                syncCursor = nil
+            }
+            outbox.removeFirst()
+        }
+        isOffline = false
+        saveSnapshot()
+        return refused
     }
 
     // MARK: - Local changes (mirror the Worker's rules)
@@ -668,7 +737,8 @@ final class AppStore {
         let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         localSet(id) {
             $0.status = .parked
-            if !trimmed.isEmpty { $0.parkNote = trimmed }
+            // The sheet starts with the old note, so what comes back is the note to keep.
+            if note != nil { $0.parkNote = trimmed.isEmpty ? nil : trimmed }
             $0.parkReason = reason
             $0.parkedAt = .now
         }
@@ -682,6 +752,8 @@ final class AppStore {
         localSet(task.id) {
             $0.status = .active
             $0.startedAt = .now
+            // Back at the site: the reminder to come back has done its job.
+            $0.remindAt = nil
         }
     }
 
@@ -700,6 +772,7 @@ final class AppStore {
         var tasks: [TaskItem]
         var events: [TaskEvent]
         var cursor: String?
+        var outbox: [PendingRequest]?
     }
 
     private static var snapshotURL: URL {
@@ -714,6 +787,7 @@ final class AppStore {
         tasks = Dictionary(snapshot.tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
         events = Dictionary(snapshot.events.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
         syncCursor = snapshot.cursor
+        outbox = snapshot.outbox ?? []
     }
 
     private func saveSnapshot() {
@@ -721,7 +795,8 @@ final class AppStore {
             areas: areas,
             tasks: Array(tasks.values),
             events: Array(events.values),
-            cursor: syncCursor
+            cursor: syncCursor,
+            outbox: outbox
         )
         guard let data = try? JSONCoding.encoder.encode(snapshot) else { return }
         let url = Self.snapshotURL

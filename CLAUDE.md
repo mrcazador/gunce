@@ -48,9 +48,13 @@ and fix it.
   (under Şimdi, with the full day and week behind "Haftayı gör").
 - Tasks Claude creates have `created_via = 'claude'`.
 - **Şehir** (gamification): every top-level task is a building, derived from tasks and İz only
-  (`App/Core/City.swift`, nothing entered by hand). Steps raise floors; parked 3+ days = stalled,
-  7+ days = abandoned (never destroyed); finished after a week-long wait = landmark. Levels: Bina,
-  Site (5), Mahalle (15), Şehir (40) finished buildings. It is its own world: no real-life rewards.
+  (`App/Core/City.swift`, nothing entered by hand). Steps raise floors. A site is judged by its
+  steps, active or parked alike: no step checked off for 3+ days = stalled, 7+ days = abandoned
+  (never destroyed); a task without steps counts the last time it was in hand (latest start or park). Finished after
+  a week-long wait = landmark. Levels: Bina, Site (5), Mahalle (15), Şehir (40) finished buildings;
+  each level changes the streets (dirt → asphalt and lamps → trees → skyline and lit lamps) and
+  is celebrated once. Tapping a building zooms in and opens its card (steps, note, actions).
+  It is its own world: no real-life rewards.
   Each area builds its own kind in its own district, with roads between: Hayat European homes,
   İş glass offices, Spor sports halls, Yatırım banks (areas added later build homes). Size picks
   the finished building (`city-<kind>-final1…3`); construction stages are shared per kind

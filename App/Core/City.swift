@@ -7,11 +7,11 @@ struct CityBuilding: Identifiable, Hashable {
     enum Stage: Hashable {
         /// In the inbox: the plot is marked out.
         case planned
-        /// Being built (active, or parked for less than three days).
+        /// Being built: a step was checked off in the last three days.
         case rising
-        /// Parked for 3–6 days: the crane has stopped.
+        /// No step checked off for 3–6 days: the crane has stopped.
         case stalled
-        /// Parked for a week or more: tape across the door, ivy on the walls.
+        /// No step checked off for a week or more: tape across the door, ivy on the walls.
         case abandoned
         case finished
     }
@@ -69,7 +69,7 @@ struct CityBuilding: Identifiable, Hashable {
     let progress: Double
     let stepsDone: Int
     let stepsTotal: Int
-    /// Days since it was parked (stalled and abandoned buildings).
+    /// Days since a step was last checked off (or since construction began).
     let idleDays: Int
     /// Days since it was finished: after a few days the building is moved into (iskan).
     let finishedDays: Int
@@ -138,6 +138,26 @@ enum CityLevel: Int, CaseIterable {
         }
     }
 
+    /// The city's story at this level: what the place looks like now.
+    var story: String {
+        switch self {
+        case .building: "Toprak yollar, tek bir vinç. İlk binaların yükseliyor."
+        case .site: "Yollar asfaltlandı, sokak lambaları yanıyor."
+        case .neighbourhood: "Sokaklar ağaçlandı; her semt kendi yüzünü buldu."
+        case .city: "Ufukta silüet, akşam ışıkları yanıyor. Burası artık bir şehir."
+        }
+    }
+
+    /// What reaching this level adds to the city.
+    var unlock: String {
+        switch self {
+        case .building: "Toprak yollar ve vinçler"
+        case .site: "Asfalt yollar ve sokak lambaları"
+        case .neighbourhood: "Ağaçlı sokaklar"
+        case .city: "Ufuk silüeti ve akşam ışıkları"
+        }
+    }
+
     static func level(for finished: Int) -> CityLevel {
         allCases.last { finished >= $0.threshold } ?? .building
     }
@@ -156,7 +176,7 @@ struct CitySummary {
 }
 
 extension AppStore {
-    /// Days a parked task may rest before its site counts as stalled, and then abandoned.
+    /// Days without a checked-off step before a site counts as stalled, and then abandoned.
     static let stalledAfterDays = 3
     static let abandonedAfterDays = 7
 
@@ -172,11 +192,10 @@ extension AppStore {
                 stage = .finished
             case .inbox:
                 stage = .planned
-            case .active:
-                stage = .rising
-            case .parked:
-                let since = task.parkedAt ?? task.updatedAt
-                idle = calendar.dateComponents([.day], from: since, to: now).day ?? 0
+            case .active, .parked:
+                // A site is judged by its work, not by whether it is in hand: days since a step
+                // was last checked off (or since construction began, before the first one).
+                idle = calendar.dateComponents([.day], from: lastProgress(of: task), to: now).day ?? 0
                 stage = idle >= Self.abandonedAfterDays ? .abandoned
                     : idle >= Self.stalledAfterDays ? .stalled : .rising
             case .archived:
@@ -222,6 +241,26 @@ extension AppStore {
             stalled: stalled,
             landmarks: buildings.filter(\.isLandmark).count
         )
+    }
+
+    /// The last sign of work on a building. With steps: the newest checked-off step, or when
+    /// construction began (first started) before the first one. Without steps there is
+    /// nothing to check off, so the last time it was in hand (latest start or park) counts.
+    func lastProgress(of task: TaskItem) -> Date {
+        let steps = subtasks(of: task.id).filter { $0.deletedAt == nil }
+        let begun = task.createdAt
+        if steps.isEmpty {
+            // In hand until it was put down: the latest start or park.
+            return [task.startedAt, task.parkedAt, begun].compactMap { $0 }.max() ?? begun
+        }
+        if let stepDone = steps.compactMap({ $0.status == .done ? $0.completedAt : nil }).max() {
+            return stepDone
+        }
+        let firstStart = events.values
+            .filter { $0.taskId == task.id && $0.kind == "started" }
+            .map(\.occurredAt)
+            .min()
+        return firstStart ?? task.startedAt ?? begun
     }
 
     /// Whether the task once sat parked for a week or more before work went on.

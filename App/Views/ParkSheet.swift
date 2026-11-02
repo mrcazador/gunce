@@ -69,9 +69,26 @@ struct ParkSheet: View {
                         .buttonStyle(.glassProminent)
                 }
             }
-            .onAppear { noteFocused = true }
+            .onAppear {
+                // Start from where you left off last time; edit it or write over it.
+                if note.isEmpty { note = request.task.parkNote ?? "" }
+                remind = Self.suggestedReminder(for: reason)
+                noteFocused = true
+            }
+            .onChange(of: reason) { _, newValue in
+                remind = Self.suggestedReminder(for: newValue)
+            }
         }
         .presentationDetents([.large])
+    }
+
+    /// Waiting on someone or missing information: come back tomorrow morning by default, so
+    /// postponed work gets a nudge without an extra tap. "Sonra devam" stays quiet.
+    static func suggestedReminder(for reason: ParkReason) -> Reminders.Preset {
+        switch reason {
+        case .waiting, .needInfo: .tomorrowMorning
+        case .later: .none
+        }
     }
 
     private func confirm() {

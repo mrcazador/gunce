@@ -9,8 +9,8 @@ struct TasksView: View {
         NavigationStack {
             List {
                 Picker("Görünüm", selection: $showDone) {
-                    Text("Açık").tag(false)
-                    Text("Biten").tag(true)
+                    Text("Şantiyede").tag(false)
+                    Text("Teslim edilen").tag(true)
                 }
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
