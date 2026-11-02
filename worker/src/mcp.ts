@@ -58,6 +58,20 @@ async function areaMap(env: Env, s: Session): Promise<Map<string, string>> {
   return new Map(areas.map((a) => [a.id as string, a.name as string]));
 }
 
+/** Task size (Ufak / Orta / Büyük): how big the task's building is in the user's city. */
+const sizeSchema = {
+  type: "string",
+  enum: ["small", "medium", "large"],
+  description: "Task size: small (Ufak), medium (Orta, the default) or large (Büyük)",
+};
+
+function sizeValue(v: unknown): number {
+  if (v === "small") return 1;
+  if (v === "large") return 3;
+  if (v === "medium") return 2;
+  throw new HttpError(400, "invalid_field", "size must be small, medium or large");
+}
+
 /** Area name (case-insensitive) → id. */
 async function areaId(env: Env, s: Session, name: unknown): Promise<string | null | undefined> {
   if (name === undefined) return undefined;
@@ -84,6 +98,7 @@ function brief(task: Row, areas: Map<string, string>, steps?: Row[]): Row {
     started_at: task.status === "active" ? task.started_at : null,
     due_at: task.due_at,
     remind_at: task.remind_at,
+    size: task.priority === 1 ? "small" : task.priority === 3 ? "large" : null,
     completed_at: task.completed_at,
     created_via: task.created_via === "claude" ? "claude" : null,
   };
@@ -194,6 +209,7 @@ const tools: Tool[] = [
         due_at: isoDate,
         remind_at: isoDate,
         steps: { type: "array", items: { type: "string", maxLength: 500 }, maxItems: 20, description: "Ordered steps" },
+        size: sizeSchema,
         parent_id: { type: "string", description: "Make this a step of that task" },
       },
       required: ["title"],
@@ -205,6 +221,7 @@ const tools: Tool[] = [
       if (args.details !== undefined) body.details = args.details;
       if (args.due_at) body.due_at = args.due_at;
       if (args.remind_at) body.remind_at = args.remind_at;
+      if (args.size) body.priority = sizeValue(args.size);
       const area = await areaId(env, s, args.area);
       if (area) body.area_id = area;
       if (args.parent_id !== undefined) {
@@ -224,7 +241,7 @@ const tools: Tool[] = [
   {
     name: "update_task",
     title: "Update task",
-    description: "Edit a task's title, details, next step, area, due date or reminder. Pass null to clear a date.",
+    description: "Edit a task's title, details, next step, area, size, due date or reminder. Pass null to clear a date.",
     inputSchema: {
       type: "object",
       properties: {
@@ -235,6 +252,7 @@ const tools: Tool[] = [
         area: { type: ["string", "null"], description: "Area name, or null for none" },
         due_at: isoDate,
         remind_at: isoDate,
+        size: sizeSchema,
       },
       required: ["id"],
       additionalProperties: false,
@@ -244,6 +262,7 @@ const tools: Tool[] = [
       const id = taskId(args);
       const body: Args = {};
       for (const k of ["title", "details", "next_step", "due_at", "remind_at"]) if (k in args) body[k] = args[k];
+      if (args.size) body.priority = sizeValue(args.size);
       const area = await areaId(env, s, args.area);
       if (area !== undefined) body.area_id = area;
       await call((req) => t.updateTask(req, env, s, id), body);
