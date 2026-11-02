@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @AppStorage(ProfileKeys.name) private var name = ""
+    @State private var showTutorial = false
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     @State private var pendingReminders = 0
     @State private var testsSent = 0
@@ -61,8 +62,16 @@ struct SettingsView: View {
                 ConnectionTestSection()
 
                 Section {
+                    Button {
+                        showTutorial = true
+                    } label: {
+                        Label("Nasıl çalışır?", systemImage: "questionmark.circle")
+                    }
                     LabeledContent("Sürüm", value: version)
                 }
+            }
+            .fullScreenCover(isPresented: $showTutorial) {
+                OnboardingView()
             }
             .navigationTitle("Ayarlar")
             .navigationBarTitleDisplayMode(.inline)

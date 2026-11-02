@@ -64,8 +64,45 @@ struct TaskItem: Codable, Identifiable, Hashable {
     var deletedAt: Date?
     /// Task size, 1…3 (see `TaskSize`). Missing in snapshots saved before sizes existed.
     var priority: Int? = nil
+    /// "daily", "weekdays" or "weekly" for a repeating task (see `Recurrence`); nil for a
+    /// one-off. Kept as text so an unknown value from a newer server never breaks decoding.
+    var recurrence: String? = nil
 
     var size: TaskSize { TaskSize(rawValue: priority ?? 2) ?? .medium }
+
+    var repeats: Recurrence? { recurrence.flatMap(Recurrence.init(rawValue:)) }
+
+    /// A repeating task already done in the current round: today, or this week for weekly ones.
+    func isDoneThisRound(now: Date = .now, calendar: Calendar = .current) -> Bool {
+        guard let repeats, let done = completedAt else { return false }
+        switch repeats {
+        case .daily, .weekdays: return calendar.isDate(done, inSameDayAs: now)
+        case .weekly: return calendar.isDate(done, equalTo: now, toGranularity: .weekOfYear)
+        }
+    }
+
+    /// A repeating task still to do in the current round (weekday tasks rest at the weekend).
+    func isDueThisRound(now: Date = .now, calendar: Calendar = .current) -> Bool {
+        guard let repeats, status != .archived, deletedAt == nil else { return false }
+        if repeats == .weekdays, calendar.isDateInWeekend(now) { return false }
+        return !isDoneThisRound(now: now, calendar: calendar)
+    }
+}
+
+/// How a repeating task comes back. Repeating tasks are not buildings: each time one is done
+/// it adds a little street furniture to its area's district.
+enum Recurrence: String, CaseIterable, Identifiable {
+    case daily, weekdays, weekly
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .daily: "Her gün"
+        case .weekdays: "Hafta içi"
+        case .weekly: "Her hafta"
+        }
+    }
 }
 
 /// How big a task is: Ufak, Orta or Büyük. Decides how grand its building is in Şehir.

@@ -118,6 +118,10 @@ struct TaskRow: View {
                     if showArea, let area = store.area(task.areaId) {
                         AreaLabel(area: area)
                     }
+                    if let repeats = task.repeats {
+                        Label(task.isDoneThisRound() ? "\(repeats.title) · \(repeats == .weekly ? "bu hafta" : "bugün") yapıldı" : repeats.title, systemImage: "repeat")
+                            .foregroundStyle(.secondary)
+                    }
                     let steps = store.progress(of: task.id)
                     if steps.total > 0 {
                         Label("\(steps.done)/\(steps.total)", systemImage: "checklist")
@@ -147,7 +151,8 @@ struct TaskRow: View {
     }
 
     private var statusSymbol: String {
-        switch task.status {
+        if task.isDoneThisRound() { return "checkmark.circle.fill" }
+        return switch task.status {
         case .active: "play.circle.fill"
         case .parked: "pause.circle"
         case .inbox: "circle"
@@ -180,7 +185,7 @@ struct TaskSwipeActions: ViewModifier {
         content
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 if task.parentId == nil, task.status == .inbox || task.status == .parked {
-                    Button(task.status == .parked ? "Şantiyeye dön" : "Başla", systemImage: "play") {
+                    Button(task.status == .parked ? "Şantiyeye dön" : "Temeli at", systemImage: "play") {
                         store.requestStart(task)
                     }
                     .tint(Color.primary)
@@ -244,5 +249,49 @@ struct ActionRow<Content: View>: View {
         } else {
             HStack(spacing: 12) { content() }
         }
+    }
+}
+
+/// Progress laid brick by brick: one brick per step (or per building towards the next level).
+/// Finished bricks pop into place when the row appears and whenever one is added. Long rows
+/// group into at most 12 bricks so each stays readable.
+struct BrickProgress: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let done: Int
+    let total: Int
+    var height: CGFloat = 14
+    /// Spoken by VoiceOver, e.g. "2 adımın 1 tanesi bitti".
+    var label: String
+    @State private var beat = 0
+
+    var body: some View {
+        let count = min(max(total, 1), 12)
+        let filled = total > 0 ? min(count, done * count / total) : 0
+        let shape = RoundedRectangle(cornerRadius: height * 0.3)
+        HStack(spacing: 3) {
+            ForEach(0..<count, id: \.self) { index in
+                if index < filled {
+                    shape
+                        .fill(Color.themeBrick)
+                        .overlay(alignment: .bottom) {
+                            // The darker lower edge gives each brick its depth.
+                            Rectangle()
+                                .fill(Color.themeBrickShadow)
+                                .frame(height: height * 0.24)
+                        }
+                        .clipShape(shape)
+                        .modifier(PopIn(delay: Double(index) * 0.05, beat: beat))
+                } else {
+                    shape
+                        .fill(Color.themeCard)
+                        .overlay(shape.strokeBorder(Color.themeCardShadow, style: StrokeStyle(lineWidth: 1.2, dash: [3, 2])))
+                }
+            }
+        }
+        .frame(height: height)
+        .onAppear { if !reduceMotion { beat += 1 } }
+        .onChange(of: done) { if !reduceMotion { beat += 1 } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
     }
 }

@@ -22,7 +22,7 @@ import {
 type Row = Record<string, unknown>;
 
 const TASK_COLUMNS = `id, area_id, parent_id, title, details, status, next_step, park_note, park_reason,
-  parked_at, started_at, due_at, remind_at, calendar_event_id, sort, priority, created_via,
+  parked_at, started_at, due_at, remind_at, calendar_event_id, sort, priority, recurrence, created_via,
   created_at, updated_at, completed_at, deleted_at`;
 const AREA_COLUMNS = "id, name, symbol, color, sort, created_at, updated_at, deleted_at";
 const EVENT_COLUMNS = "id, task_id, kind, note, reason, duration_seconds, source, occurred_at";
@@ -46,6 +46,9 @@ export function mapDbError(err: unknown): never {
   if (msg.includes("FOREIGN KEY constraint failed")) throw new HttpError(400, "invalid_reference");
   throw err;
 }
+
+/** How a repeating task comes back; null for a one-off task. */
+const RECURRENCES = ["daily", "weekdays", "weekly"] as const;
 
 /** Task size: 1 ufak, 2 orta, 3 büyük. */
 function priority(body: Row): number | undefined {
@@ -205,8 +208,8 @@ export async function createTask(req: Request, env: Env, s: Session): Promise<Re
   try {
     const row = await env.DB.prepare(
       `INSERT INTO tasks (id, user_id, area_id, parent_id, title, details, status, next_step,
-         due_at, remind_at, calendar_event_id, sort, priority, created_via, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         due_at, remind_at, calendar_event_id, sort, priority, recurrence, created_via, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING ${TASK_COLUMNS}`,
     )
       .bind(
@@ -223,6 +226,7 @@ export async function createTask(req: Request, env: Env, s: Session): Promise<Re
         str(body, "calendar_event_id", { max: 200, nullable: true }) ?? null,
         num(body, "sort") ?? 0,
         priority(body) ?? 2,
+        oneOf(body, "recurrence", RECURRENCES, true) ?? null,
         sourceFor(s, body, "created_via"),
         stamp,
         stamp,
@@ -252,6 +256,7 @@ export async function updateTask(req: Request, env: Env, s: Session, id: string)
     ["calendar_event_id", str(body, "calendar_event_id", { max: 200, nullable: true })],
     ["sort", num(body, "sort")],
     ["priority", priority(body)],
+    ["recurrence", oneOf(body, "recurrence", RECURRENCES, true)],
   ];
   for (const [col, val] of fields) {
     if (val !== undefined) sets.push(`${col} = ?`), binds.push(val);
@@ -411,8 +416,11 @@ export async function completeTask(req: Request, env: Env, s: Session, id: strin
       `INSERT INTO task_events (id, user_id, task_id, kind, duration_seconds, source, occurred_at)
        SELECT ?, user_id, id, 'done', ${DURATION_SQL}, ?, ? FROM tasks WHERE ${cond}`,
     ).bind(newId(), stamp, source, stamp, id, s.userId),
+    // A repeating task closes this period only: it goes back to the inbox with the time it
+    // was last done, and comes round again in the next period.
     env.DB.prepare(
-      `UPDATE tasks SET status = 'done', completed_at = ?, remind_at = NULL, updated_at = ?
+      `UPDATE tasks SET status = CASE WHEN recurrence IS NULL THEN 'done' ELSE 'inbox' END,
+         completed_at = ?, remind_at = NULL, updated_at = ?
        WHERE ${cond} RETURNING ${TASK_COLUMNS}`,
     ).bind(stamp, stamp, id, s.userId),
   ]);

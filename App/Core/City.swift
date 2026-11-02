@@ -173,6 +173,9 @@ struct CitySummary {
     let levelProgress: Double
     let stalled: [CityBuilding]
     let landmarks: Int
+    /// How many times repeating tasks were done, per area (nil = no area). Each time adds a
+    /// flower bed, a tree or a bench to that district; the street fills up over time.
+    var chores: [String?: Int] = [:]
 }
 
 extension AppStore {
@@ -183,7 +186,7 @@ extension AppStore {
     func city(now: Date = .now) -> CitySummary {
         let calendar = Calendar.current
         var buildings: [CityBuilding] = []
-        for task in tasks.values where task.parentId == nil && task.deletedAt == nil && task.status != .archived {
+        for task in tasks.values where task.parentId == nil && task.deletedAt == nil && task.status != .archived && task.repeats == nil {
             let steps = progress(of: task.id)
             var idle = 0
             let stage: CityBuilding.Stage
@@ -233,13 +236,21 @@ extension AppStore {
         let stalled = buildings
             .filter { $0.stage == .stalled || $0.stage == .abandoned }
             .sorted { $0.idleDays > $1.idleDays }
+        var chores: [String?: Int] = [:]
+        let repeating = Dictionary(uniqueKeysWithValues: tasks.values
+            .filter { $0.repeats != nil && $0.deletedAt == nil }
+            .map { ($0.id, $0.areaId) })
+        for event in events.values where event.kind == "done" {
+            if let area = repeating[event.taskId] { chores[area, default: 0] += 1 }
+        }
         return CitySummary(
             buildings: buildings,
             finished: finished,
             level: level,
             levelProgress: progress,
             stalled: stalled,
-            landmarks: buildings.filter(\.isLandmark).count
+            landmarks: buildings.filter(\.isLandmark).count,
+            chores: chores
         )
     }
 

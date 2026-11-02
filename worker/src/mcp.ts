@@ -72,6 +72,19 @@ function sizeValue(v: unknown): number {
   throw new HttpError(400, "invalid_field", "size must be small, medium or large");
 }
 
+/** How often a task comes back: daily chores and habits. "none" makes it a one-off again. */
+const repeatSchema = {
+  type: "string",
+  enum: ["none", "daily", "weekdays", "weekly"],
+  description: "Repeat: daily (her gün), weekdays (hafta içi), weekly (her hafta) or none. Completing a repeating task closes today's (or this week's) round; it comes back in the next one.",
+};
+
+function repeatValue(v: unknown): string | null {
+  if (v === "none") return null;
+  if (v === "daily" || v === "weekdays" || v === "weekly") return v;
+  throw new HttpError(400, "invalid_field", "repeat must be none, daily, weekdays or weekly");
+}
+
 /** Area name (case-insensitive) → id. */
 async function areaId(env: Env, s: Session, name: unknown): Promise<string | null | undefined> {
   if (name === undefined) return undefined;
@@ -99,6 +112,7 @@ function brief(task: Row, areas: Map<string, string>, steps?: Row[]): Row {
     due_at: task.due_at,
     remind_at: task.remind_at,
     size: task.priority === 1 ? "small" : task.priority === 3 ? "large" : null,
+    repeat: task.recurrence ?? null,
     completed_at: task.completed_at,
     created_via: task.created_via === "claude" ? "claude" : null,
   };
@@ -210,6 +224,7 @@ const tools: Tool[] = [
         remind_at: isoDate,
         steps: { type: "array", items: { type: "string", maxLength: 500 }, maxItems: 20, description: "Ordered steps" },
         size: sizeSchema,
+        repeat: repeatSchema,
         parent_id: { type: "string", description: "Make this a step of that task" },
       },
       required: ["title"],
@@ -222,6 +237,7 @@ const tools: Tool[] = [
       if (args.due_at) body.due_at = args.due_at;
       if (args.remind_at) body.remind_at = args.remind_at;
       if (args.size) body.priority = sizeValue(args.size);
+      if (args.repeat) body.recurrence = repeatValue(args.repeat);
       const area = await areaId(env, s, args.area);
       if (area) body.area_id = area;
       if (args.parent_id !== undefined) {
@@ -241,7 +257,7 @@ const tools: Tool[] = [
   {
     name: "update_task",
     title: "Update task",
-    description: "Edit a task's title, details, next step, area, size, due date or reminder. Pass null to clear a date.",
+    description: "Edit a task's title, details, next step, area, size, repeat, due date or reminder. Pass null to clear a date.",
     inputSchema: {
       type: "object",
       properties: {
@@ -253,6 +269,7 @@ const tools: Tool[] = [
         due_at: isoDate,
         remind_at: isoDate,
         size: sizeSchema,
+        repeat: repeatSchema,
       },
       required: ["id"],
       additionalProperties: false,
@@ -263,6 +280,7 @@ const tools: Tool[] = [
       const body: Args = {};
       for (const k of ["title", "details", "next_step", "due_at", "remind_at"]) if (k in args) body[k] = args[k];
       if (args.size) body.priority = sizeValue(args.size);
+      if (args.repeat) body.recurrence = repeatValue(args.repeat);
       const area = await areaId(env, s, args.area);
       if (area !== undefined) body.area_id = area;
       await call((req) => t.updateTask(req, env, s, id), body);

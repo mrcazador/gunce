@@ -94,9 +94,17 @@ private struct TaskDetailForm: View {
                     }
                 }
                 if task.parentId == nil {
-                    Picker("Büyüklük", selection: sizeBinding) {
-                        ForEach(TaskSize.allCases) { size in
-                            Text(size.title).tag(size)
+                    Picker("Tekrar", selection: repeatBinding) {
+                        Text("Yok").tag(Recurrence?.none)
+                        ForEach(Recurrence.allCases) { repeats in
+                            Text(repeats.title).tag(Optional(repeats))
+                        }
+                    }
+                    if task.repeats == nil {
+                        Picker("Büyüklük", selection: sizeBinding) {
+                            ForEach(TaskSize.allCases) { size in
+                                Text(size.title).tag(size)
+                            }
                         }
                     }
                 }
@@ -109,14 +117,19 @@ private struct TaskDetailForm: View {
                     DatePicker("Hatırlatma", selection: dateBinding(\.remindAt))
                 }
             } footer: {
-                if task.dueAt != nil, store.calendarSyncEnabled {
-                    Text("Bu görev PickUp takviminde de görünür.")
-                } else if task.parentId == nil {
-                    Text("Büyük işler şehirde daha gösterişli binalar olur.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if task.repeats != nil {
+                        Text("Tekrarlayan iş teslim edilince kaybolmaz, bir sonraki gün (ya da hafta) yine gelir. Bina olmaz; her yapışında semtine bir çiçek, ağaç ya da bank ekler.")
+                    } else if task.parentId == nil {
+                        Text("Büyüklük, iş bittiğinde şehirde nasıl bir bina olacağını seçer: büyük işler daha gösterişli olur.")
+                    }
+                    if task.dueAt != nil, store.calendarSyncEnabled {
+                        Text("Bu görev PickUp takviminde de görünür.")
+                    }
                 }
             }
 
-            Section("İz") {
+            Section {
                 TextField("Not ekle", text: $newNote, axis: .vertical)
                     .focused($focus, equals: .note)
                     .submitLabel(.done)
@@ -128,6 +141,10 @@ private struct TaskDetailForm: View {
                 ForEach(store.history(of: task.id)) { event in
                     EventRow(event: event)
                 }
+            } header: {
+                Text("İz · geçmiş")
+            } footer: {
+                Text("Başlattığın, durdurduğun ve teslim ettiğin her an burada kalır. Not, kaldığın yeri değiştirmez.")
             }
         }
         .themedBackground()
@@ -209,8 +226,7 @@ private struct TaskDetailForm: View {
         } footer: {
             if progress.total > 0 {
                 VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: Double(progress.done), total: Double(progress.total))
-                        .tint(Color.primary)
+                    BrickProgress(done: progress.done, total: progress.total, height: 12, label: "")
                         .accessibilityHidden(true)
                     Text("İlk açık adım Şimdi ekranında sıradaki adım olarak görünür. Sıralamak için basılı tutup sürükle.")
                 }
@@ -251,6 +267,13 @@ private struct TaskDetailForm: View {
         Binding(
             get: { task.areaId },
             set: { newValue in Task { await store.edit(task) { $0.areaId = newValue } } }
+        )
+    }
+
+    private var repeatBinding: Binding<Recurrence?> {
+        Binding(
+            get: { task.repeats },
+            set: { newValue in Task { await store.edit(task) { $0.recurrence = newValue?.rawValue } } }
         )
     }
 
@@ -295,7 +318,7 @@ private struct TaskDetailForm: View {
             switch task.status {
             case .inbox, .parked:
                 if task.parentId == nil {
-                    ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Başla", symbol: "play.fill", prominent: true) {
+                    ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Temeli at", symbol: "play.fill", prominent: true) {
                         store.requestStart(task)
                     }
                 }

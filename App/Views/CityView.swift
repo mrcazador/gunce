@@ -13,9 +13,11 @@ struct CityView: View {
     @State private var pan: CGSize = .zero
     @GestureState private var pinch: CGFloat = 1
     @GestureState private var drag: CGSize = .zero
-    /// The map before a building was focused, restored when its card closes.
-    @State private var beforeFocus: (zoom: CGFloat?, pan: CGSize)?
-    @State private var mapSize: CGSize = .zero
+    /// The building the map is zoomed in on while its card is open. The map's own pan and
+    /// zoom stay as they were, so closing the card returns to them.
+    @State private var focusID: String?
+    /// Full screen height, to know where the card's top edge is.
+    @State private var screenHeight: CGFloat = 0
     /// Bumped each time the tab opens: trees, lamps and benches pop in again.
     @State private var popBeat = 0
     /// The highest level already celebrated, so a level-up is shown once.
@@ -23,31 +25,44 @@ struct CityView: View {
     @State private var celebrating: CityLevel?
     /// A task opened from a building card, pushed here instead of jumping to Şimdi.
     @State private var openID: String?
+    @State private var showStory = false
 
     static let tile: CGFloat = 78
+    static let focusScale: CGFloat = 1.5
+    /// The building card covers this share of the screen.
+    static let cardShare: CGFloat = 0.42
 
     var body: some View {
         let city = store.city()
         let layout = CityLayout(city: city, areas: store.sortedAreas, tile: Self.tile)
         NavigationStack {
             VStack(spacing: 0) {
-                CityHeader(city: city) { focus($0, in: layout) }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+                // While a building is in focus the header steps aside, so the map gets the room.
+                if focusID == nil, !city.buildings.isEmpty {
+                    CityHeader(city: city) { showStory = true }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if city.buildings.isEmpty {
-                    ContentUnavailableView(
-                        "Şehrin boş",
-                        systemImage: "building.2",
-                        description: Text("İlk görevini ekle; arsası hemen ayrılır.")
-                    )
+                    ContentUnavailableView {
+                        Label("Şehrin boş", systemImage: "building.2")
+                    } description: {
+                        Text("İlk görevini yaz; arsası hemen ayrılır.")
+                    } actions: {
+                        Button("Görev ekle") { store.captureRequest = CaptureRequest() }
+                            .buttonStyle(.borderedProminent)
+                    }
                 } else {
                     GeometryReader { proxy in
-                        let scale = currentScale(layout: layout, in: proxy.size)
+                        let focused = focusOffset(layout, map: proxy.frame(in: .global))
+                        let scale = focused == nil ? currentScale(layout: layout, in: proxy.size) : Self.focusScale
+                        let offset = focused ?? CGSize(width: pan.width + drag.width, height: pan.height + drag.height)
                         CityCanvas(layout: layout, level: city.level, selectedID: selected?.id, popBeat: popBeat) {
-                            focus($0, in: layout)
+                            focus($0)
                         }
                         .scaleEffect(scale)
-                        .offset(x: pan.width + drag.width, y: pan.height + drag.height)
+                        .offset(offset)
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .contentShape(Rectangle())
                         .clipped()
@@ -66,17 +81,27 @@ struct CityView: View {
                                         }
                                 )
                         )
-                        .onAppear { mapSize = proxy.size }
-                        .onChange(of: proxy.size) { _, size in mapSize = size }
                     }
                     .background(CitySky(level: city.level))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.themeBackground)
+            .background {
+                GeometryReader { screen in
+                    Color.clear
+                        .onAppear { screenHeight = screen.size.height }
+                        .onChange(of: screen.size.height) { _, height in screenHeight = height }
+                }
+                .ignoresSafeArea()
+            }
             .navigationTitle("Şehir")
+            .navigationBarTitleDisplayMode(focusID == nil ? .large : .inline)
             .sheet(item: $selected, onDismiss: unfocus) { building in
                 CityBuildingSheet(building: building) { openID = $0 }
+            }
+            .sheet(isPresented: $showStory) {
+                CityStorySheet(city: city) { focus($0) }
             }
             .navigationDestination(item: $openID) { id in
                 TaskDetailView(taskID: id)
@@ -112,32 +137,34 @@ struct CityView: View {
         Self.clamp((zoom ?? fit(layout, size)) * pinch)
     }
 
-    /// Zooms in on a building, centres it in the space above its card and opens the card.
-    private func focus(_ building: CityBuilding, in layout: CityLayout) {
-        if beforeFocus == nil { beforeFocus = (zoom, pan) }
-        if let centre = layout.centre(of: building.id) {
-            let target: CGFloat = 1.8
-            // The canvas is centred in the map and scaled around its middle. Put the building
-            // halfway between the top of the map and the top of the card (half the screen).
-            let fromMiddle = CGSize(
-                width: (centre.x - layout.size.width / 2) * target,
-                height: (centre.y - layout.size.height / 2) * target
-            )
-            let wanted = CGSize(width: 0, height: -mapSize.height * 0.22)
-            withAnimation(reduceMotion ? nil : .smooth(duration: 0.5)) {
-                zoom = target
-                pan = CGSize(width: wanted.width - fromMiddle.width, height: wanted.height - fromMiddle.height)
-            }
+    /// Zooms in on a building and opens its card.
+    private func focus(_ building: CityBuilding) {
+        withAnimation(reduceMotion ? nil : .smooth(duration: 0.5)) {
+            focusID = building.id
         }
         selected = building
     }
 
     private func unfocus() {
         withAnimation(reduceMotion ? nil : .smooth(duration: 0.45)) {
-            zoom = beforeFocus?.zoom ?? zoom
-            pan = beforeFocus?.pan ?? pan
+            focusID = nil
         }
-        beforeFocus = nil
+    }
+
+    /// Where to move the canvas so the focused building sits in the middle of the map's
+    /// visible part: between the map's top and the top of the card. Worked out from the
+    /// map's real frame on screen, so it holds whatever the header and bars take.
+    private func focusOffset(_ layout: CityLayout, map: CGRect) -> CGSize? {
+        guard let focusID, let centre = layout.centre(of: focusID) else { return nil }
+        let fromMiddle = CGSize(
+            width: (centre.x - layout.size.width / 2) * Self.focusScale,
+            height: (centre.y - layout.size.height / 2) * Self.focusScale
+        )
+        let screen = screenHeight > 0 ? screenHeight : map.maxY
+        let cardTop = min(map.maxY, screen * (1 - Self.cardShare))
+        let visibleMiddle = (map.minY + cardTop) / 2
+        let wanted = visibleMiddle - map.midY
+        return CGSize(width: -fromMiddle.width, height: wanted - fromMiddle.height)
     }
 
     /// Shows the level-up card once when the city has grown since it was last opened.
@@ -155,54 +182,130 @@ struct CityView: View {
 
 private struct CityHeader: View {
     let city: CitySummary
-    let open: (CityBuilding) -> Void
+    let openStory: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(city.level.title)
-                    .font(.title2.weight(.semibold))
-                Spacer()
-                Text("\(city.finished) bina")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Text(city.level.story)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            if let next = city.level.next {
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: city.levelProgress)
-                        .tint(Color.themeSage)
-                    Text("\(next.title) için \(next.threshold - city.finished) bina daha · Açılacak: \(next.unlock.lowercased(with: Locale(identifier: "tr")))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        // One quiet row: the level, how far to the next one, and a way into the story. The
+        // story, what the next level adds and the stalled sites live one tap away.
+        Button(action: openStory) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(city.level.title)
+                        .font(.title3.weight(.bold))
+                    if let next = city.level.next {
+                        Text("· \(next.title) için \(city.finished)/\(next.threshold)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !city.stalled.isEmpty {
+                        Label("\(city.stalled.count)", systemImage: "pause.circle")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.orange)
+                            .accessibilityLabel("\(city.stalled.count) inşaat duruyor")
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
-                .accessibilityElement(children: .combine)
+                if let next = city.level.next {
+                    BrickProgress(
+                        done: city.finished - city.level.threshold,
+                        total: next.threshold - city.level.threshold,
+                        height: 10,
+                        label: "\(next.title) için \(next.threshold - city.finished) bina daha"
+                    )
+                }
             }
-            if !city.stalled.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(city.stalled) { building in
-                            Button { open(building) } label: {
-                                Label(building.title, systemImage: building.stage == .abandoned ? "exclamationmark.triangle" : "pause.circle")
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Şehrin hikâyesini ve duran inşaatları açar")
+    }
+}
+
+/// Everything about the city that does not need to be on the map: where it stands in its
+/// story, what the next level brings, and the sites waiting for a step.
+private struct CityStorySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let city: CitySummary
+    let focus: (CityBuilding) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(CityLevel.allCases, id: \.self) { level in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: level.rawValue < city.level.rawValue ? "checkmark.circle.fill"
+                                  : level == city.level ? "largecircle.fill.circle" : "circle.dashed")
+                                .foregroundStyle(level.rawValue <= city.level.rawValue ? Color.themeBrick : Color.secondary)
+                                .font(.title3)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(level == .building ? level.title : "\(level.title) · \(level.threshold) bina")
+                                    .font(.headline)
+                                Text(level.rawValue <= city.level.rawValue ? level.story : "Açılacak: \(level.unlock.lowercased(with: Locale(identifier: "tr")))")
                                     .font(.subheadline)
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 12)
-                                    .frame(minHeight: 36)
-                                    .background(.fill.tertiary, in: Capsule())
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("\(building.idleDays) gündür madde tamamlanmadı")
                         }
+                        .padding(.vertical, 2)
+                        .accessibilityElement(children: .combine)
+                    }
+                } header: {
+                    Text("Şehrin hikâyesi")
+                } footer: {
+                    if let next = city.level.next {
+                        Text("\(next.title) için \(next.threshold - city.finished) bina daha teslim et.")
                     }
                 }
-                .scrollIndicators(.hidden)
-                Text(city.stalled.count == 1 ? "1 inşaat duruyor" : "\(city.stalled.count) inşaat duruyor")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                Section("Nasıl büyür?") {
+                    Label("Her iş bir bina, her tamamlanan adım bir kat.", systemImage: "building.2")
+                    Label("3 gün adım atılmazsa vinç durur, 7 günde şantiye terk edilir. Bir adım onu yeniden başlatır.", systemImage: "pause.circle")
+                    Label("Büyüklük (Ufak, Orta, Büyük) teslim edilen binanın ne kadar gösterişli olacağını seçer.", systemImage: "square.stack.3d.up")
+                    Label("Uzun bekleyip sonunda teslim ettiğin iş anıt yapı olur.", systemImage: "star")
+                    Label("Teslimden iki gün sonra binaya taşınılır, ışıkları yanar.", systemImage: "lightbulb")
+                }
+                .font(.subheadline)
+
+                if !city.stalled.isEmpty {
+                    Section {
+                        ForEach(city.stalled) { building in
+                            Button {
+                                dismiss()
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(350))
+                                    focus(building)
+                                }
+                            } label: {
+                                HStack {
+                                    Label(building.title, systemImage: building.stage == .abandoned ? "exclamationmark.triangle" : "pause.circle")
+                                    Spacer()
+                                    Text("\(building.idleDays) gün")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Duran inşaatlar")
+                    } footer: {
+                        Text("Bir binaya dokunursan harita ona yaklaşır.")
+                    }
+                }
+            }
+            .themedBackground()
+            .navigationTitle(city.level.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Bitti") { dismiss() }
+                }
             }
         }
+        .presentationDetents([.medium, .large])
     }
 }
 
@@ -336,6 +439,8 @@ struct CityLayout {
         let originI: Int
         let originJ: Int
         let size: Int
+        /// Times this area's repeating tasks were done: its street furniture.
+        var chores = 0
     }
 
     /// Plots sit this many tile widths apart, leaving a lane between buildings.
@@ -359,7 +464,8 @@ struct CityLayout {
             .map { area in (area, city.buildings.filter { $0.areaId == area.id }) }
         let known = Set(areas.map(\.id))
         groups.append((nil, city.buildings.filter { $0.areaId == nil || !known.contains($0.areaId!) }))
-        groups = groups.filter { !$0.1.isEmpty }
+        // An area with only repeating tasks still gets a district, for its street furniture.
+        groups = groups.filter { !$0.1.isEmpty || (city.chores[$0.0?.id] ?? 0) > 0 }
         let largest = groups.map(\.1.count).max() ?? 1
         let side = max(2, Int(Double(largest).squareRoot().rounded(.up)))
         var plots: [Plot] = []
@@ -367,7 +473,7 @@ struct CityLayout {
         for (index, group) in groups.enumerated() {
             let oi = (index % 2) * (side + 1)
             let oj = (index / 2) * (side + 1)
-            districts.append(District(area: group.0, originI: oi, originJ: oj, size: side))
+            districts.append(District(area: group.0, originI: oi, originJ: oj, size: side, chores: city.chores[group.0?.id] ?? 0))
             // Big buildings take the back plots so they do not hide the small ones.
             let ordered = group.1.sorted { ($0.size.rawValue, $1.createdAt) > ($1.size.rawValue, $0.createdAt) }
             for (n, building) in ordered.enumerated() {
@@ -510,6 +616,25 @@ private struct CityCanvas: View {
                 .modifier(PopIn(delay: PopIn.delay(seed: index * 31 + n, beat: popBeat), beat: popBeat))
                 .position(x: corners[n].0.x, y: corners[n].0.y - tile * corners[n].1.height / 2)
         }
+        // Repeating tasks done in this area: flower beds, trees and benches along its edges,
+        // one more each time, up to sixteen.
+        let chores: [(CGPoint, CityProp)] = {
+            var spots: [CGPoint] = []
+            for f in [0.15, 0.4, 0.65, 0.9] as [CGFloat] {
+                spots.append(layout.point(i - 0.62, j + f * s - 0.5))
+                spots.append(layout.point(i + f * s - 0.5, j - 0.62))
+                spots.append(layout.point(i + s - 0.38, j + f * s - 0.5))
+                spots.append(layout.point(i + f * s - 0.5, j + s - 0.38))
+            }
+            let props = CityProp.street
+            return (0..<min(d.chores, spots.count)).map { n in (spots[n], props[(n + index) % props.count]) }
+        }()
+        ForEach(chores.indices, id: \.self) { n in
+            CityPropView(prop: chores[n].1, tile: tile, glowing: level == .city)
+                .modifier(PopIn(delay: PopIn.delay(seed: index * 17 + n * 5, beat: popBeat), beat: popBeat))
+                .position(x: chores[n].0.x, y: chores[n].0.y - tile * chores[n].1.height / 2)
+                .allowsHitTesting(false)
+        }
     }
 
     // MARK: Buildings
@@ -551,6 +676,10 @@ enum CityProp: String, CaseIterable {
     case tree = "agac"
     case fountain = "cesme"
     case flag = "bayrak"
+    case flowerBed = "tarh"
+    case blossom = "erguvan"
+    case planter = "saksi"
+    case birdhouse = "kus"
 
     var imageName: String { "city-prop-\(rawValue)" }
 
@@ -563,8 +692,15 @@ enum CityProp: String, CaseIterable {
         case .tree: 0.62
         case .fountain: 0.34
         case .flag: 0.6
+        case .flowerBed: 0.22
+        case .blossom: 0.6
+        case .planter: 0.3
+        case .birdhouse: 0.55
         }
     }
+
+    /// What daily work plants along a district's edges, in this order.
+    static let street: [CityProp] = [.flowerBed, .bush, .planter, .blossom, .bench, .tree, .birdhouse, .fountain]
 
     /// What the streets have at each level: bushes at first, then lamps and benches, trees,
     /// and fountains and flags in a full city.
@@ -573,7 +709,7 @@ enum CityProp: String, CaseIterable {
         case .building: [.bush]
         case .site: [.bush, .lamp, .bench]
         case .neighbourhood: [.bush, .lamp, .bench, .tree]
-        case .city: allCases
+        case .city: [.bush, .lamp, .bench, .tree, .fountain, .flag]
         }
     }
 
@@ -766,10 +902,8 @@ private struct CityBuildingSheet: View {
                         .buttonStyle(.plain)
                 }
 
-                if live.stage != .planned {
-                    ProgressView(value: live.progress)
-                        .tint(Color.themeSage)
-                        .accessibilityLabel("İnşaat ilerlemesi")
+                if live.stepsTotal > 0 {
+                    BrickProgress(done: live.stepsDone, total: live.stepsTotal, label: "\(live.stepsTotal) adımın \(live.stepsDone) tanesi bitti")
                 }
 
                 if let note = live.parkNote, !note.isEmpty, live.stage != .finished {
@@ -783,7 +917,7 @@ private struct CityBuildingSheet: View {
 
                 if !steps.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Maddeler · \(live.stepsDone)/\(live.stepsTotal)")
+                        Text("Adımlar · \(live.stepsDone)/\(live.stepsTotal) kat")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 4)
@@ -805,7 +939,7 @@ private struct CityBuildingSheet: View {
                                 }
                             }
                         default:
-                            ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Başla", symbol: "play.fill", prominent: true) {
+                            ActionButton(title: task.status == .parked ? "Şantiyeye dön" : "Temeli at", symbol: "play.fill", prominent: true) {
                                 dismiss()
                                 Task {
                                     try? await Task.sleep(for: .milliseconds(350))
@@ -826,15 +960,15 @@ private struct CityBuildingSheet: View {
                 .frame(minHeight: 44)
 
                 if live.stage == .abandoned {
-                    Text("Bir madde tamamlarsan inşaat yeniden başlar; bitirirsen şehrin anıt yapılarından biri olur.")
+                    Text("Bir adım tamamlarsan inşaat yeniden başlar; bitirirsen şehrin anıt yapılarından biri olur.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
             .padding(20)
         }
-        .presentationDetents([.fraction(0.5), .large])
-        .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.5)))
+        .presentationDetents([.fraction(CityView.cardShare), .large])
+        .presentationBackgroundInteraction(.enabled(upThrough: .fraction(CityView.cardShare)))
         .presentationBackground(Color.themeBackground)
         .presentationDragIndicator(.visible)
     }
@@ -877,11 +1011,15 @@ enum CityText {
         case .rising:
             return b.stepsTotal > 0 ? "Kat \(b.stepsDone)/\(b.stepsTotal) · inşaat sürüyor" : "İnşaat sürüyor"
         case .stalled:
-            return "\(b.idleDays) gündür madde tamamlanmadı; inşaat duruyor"
+            return b.stepsTotal > 0
+                ? "\(b.idleDays) gündür adım tamamlanmadı; inşaat duruyor"
+                : "\(b.idleDays) gündür el sürülmedi; inşaat duruyor"
         case .abandoned:
-            return "\(b.idleDays) gündür madde tamamlanmadı; terk edilmiş"
+            return b.stepsTotal > 0
+                ? "\(b.idleDays) gündür adım tamamlanmadı; terk edilmiş"
+                : "\(b.idleDays) gündür el sürülmedi; terk edilmiş"
         case .finished:
-            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra bitirdin." : "Tamamlandı"
+            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra teslim ettin." : "\(b.size.title) bina · teslim edildi"
         }
     }
 
