@@ -13,9 +13,11 @@ struct CityView: View {
     @State private var pan: CGSize = .zero
     @GestureState private var pinch: CGFloat = 1
     @GestureState private var drag: CGSize = .zero
-    /// The map before a building was focused, restored when its card closes.
-    @State private var beforeFocus: (zoom: CGFloat?, pan: CGSize)?
-    @State private var mapSize: CGSize = .zero
+    /// The building the map is zoomed in on while its card is open. The map's own pan and
+    /// zoom stay as they were, so closing the card returns to them.
+    @State private var focusID: String?
+    /// Full screen height, to know where the card's top edge is.
+    @State private var screenHeight: CGFloat = 0
     /// Bumped each time the tab opens: trees, lamps and benches pop in again.
     @State private var popBeat = 0
     /// The highest level already celebrated, so a level-up is shown once.
@@ -25,15 +27,22 @@ struct CityView: View {
     @State private var openID: String?
 
     static let tile: CGFloat = 78
+    static let focusScale: CGFloat = 1.5
+    /// The building card covers this share of the screen.
+    static let cardShare: CGFloat = 0.42
 
     var body: some View {
         let city = store.city()
         let layout = CityLayout(city: city, areas: store.sortedAreas, tile: Self.tile)
         NavigationStack {
             VStack(spacing: 0) {
-                CityHeader(city: city) { focus($0, in: layout) }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+                // While a building is in focus the header steps aside, so the map gets the room.
+                if focusID == nil {
+                    CityHeader(city: city) { focus($0) }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if city.buildings.isEmpty {
                     ContentUnavailableView(
                         "Şehrin boş",
@@ -42,12 +51,14 @@ struct CityView: View {
                     )
                 } else {
                     GeometryReader { proxy in
-                        let scale = currentScale(layout: layout, in: proxy.size)
+                        let focused = focusOffset(layout, map: proxy.frame(in: .global))
+                        let scale = focused == nil ? currentScale(layout: layout, in: proxy.size) : Self.focusScale
+                        let offset = focused ?? CGSize(width: pan.width + drag.width, height: pan.height + drag.height)
                         CityCanvas(layout: layout, level: city.level, selectedID: selected?.id, popBeat: popBeat) {
-                            focus($0, in: layout)
+                            focus($0)
                         }
                         .scaleEffect(scale)
-                        .offset(x: pan.width + drag.width, y: pan.height + drag.height)
+                        .offset(offset)
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .contentShape(Rectangle())
                         .clipped()
@@ -66,15 +77,22 @@ struct CityView: View {
                                         }
                                 )
                         )
-                        .onAppear { mapSize = proxy.size }
-                        .onChange(of: proxy.size) { _, size in mapSize = size }
                     }
                     .background(CitySky(level: city.level))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.themeBackground)
+            .background {
+                GeometryReader { screen in
+                    Color.clear
+                        .onAppear { screenHeight = screen.size.height }
+                        .onChange(of: screen.size.height) { _, height in screenHeight = height }
+                }
+                .ignoresSafeArea()
+            }
             .navigationTitle("Şehir")
+            .navigationBarTitleDisplayMode(focusID == nil ? .large : .inline)
             .sheet(item: $selected, onDismiss: unfocus) { building in
                 CityBuildingSheet(building: building) { openID = $0 }
             }
@@ -112,32 +130,34 @@ struct CityView: View {
         Self.clamp((zoom ?? fit(layout, size)) * pinch)
     }
 
-    /// Zooms in on a building, centres it in the space above its card and opens the card.
-    private func focus(_ building: CityBuilding, in layout: CityLayout) {
-        if beforeFocus == nil { beforeFocus = (zoom, pan) }
-        if let centre = layout.centre(of: building.id) {
-            let target: CGFloat = 1.8
-            // The canvas is centred in the map and scaled around its middle. Put the building
-            // halfway between the top of the map and the top of the card (half the screen).
-            let fromMiddle = CGSize(
-                width: (centre.x - layout.size.width / 2) * target,
-                height: (centre.y - layout.size.height / 2) * target
-            )
-            let wanted = CGSize(width: 0, height: -mapSize.height * 0.22)
-            withAnimation(reduceMotion ? nil : .smooth(duration: 0.5)) {
-                zoom = target
-                pan = CGSize(width: wanted.width - fromMiddle.width, height: wanted.height - fromMiddle.height)
-            }
+    /// Zooms in on a building and opens its card.
+    private func focus(_ building: CityBuilding) {
+        withAnimation(reduceMotion ? nil : .smooth(duration: 0.5)) {
+            focusID = building.id
         }
         selected = building
     }
 
     private func unfocus() {
         withAnimation(reduceMotion ? nil : .smooth(duration: 0.45)) {
-            zoom = beforeFocus?.zoom ?? zoom
-            pan = beforeFocus?.pan ?? pan
+            focusID = nil
         }
-        beforeFocus = nil
+    }
+
+    /// Where to move the canvas so the focused building sits in the middle of the map's
+    /// visible part: between the map's top and the top of the card. Worked out from the
+    /// map's real frame on screen, so it holds whatever the header and bars take.
+    private func focusOffset(_ layout: CityLayout, map: CGRect) -> CGSize? {
+        guard let focusID, let centre = layout.centre(of: focusID) else { return nil }
+        let fromMiddle = CGSize(
+            width: (centre.x - layout.size.width / 2) * Self.focusScale,
+            height: (centre.y - layout.size.height / 2) * Self.focusScale
+        )
+        let screen = screenHeight > 0 ? screenHeight : map.maxY
+        let cardTop = min(map.maxY, screen * (1 - Self.cardShare))
+        let visibleMiddle = (map.minY + cardTop) / 2
+        let wanted = visibleMiddle - map.midY
+        return CGSize(width: -fromMiddle.width, height: wanted - fromMiddle.height)
     }
 
     /// Shows the level-up card once when the city has grown since it was last opened.
@@ -833,8 +853,8 @@ private struct CityBuildingSheet: View {
             }
             .padding(20)
         }
-        .presentationDetents([.fraction(0.5), .large])
-        .presentationBackgroundInteraction(.enabled(upThrough: .fraction(0.5)))
+        .presentationDetents([.fraction(CityView.cardShare), .large])
+        .presentationBackgroundInteraction(.enabled(upThrough: .fraction(CityView.cardShare)))
         .presentationBackground(Color.themeBackground)
         .presentationDragIndicator(.visible)
     }
