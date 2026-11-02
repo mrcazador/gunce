@@ -53,7 +53,10 @@ and fix it.
   (never destroyed); a task without steps counts the last time it was in hand (latest start or park). Finished after
   a week-long wait = landmark. Levels: Bina, Site (5), Mahalle (15), Şehir (40) finished buildings;
   each level changes the streets (dirt → asphalt and lamps → trees → skyline and lit lamps) and
-  is celebrated once. Tapping a building zooms in and opens its card (steps, note, actions).
+  is celebrated once. Street props (`city-prop-*`: bush, lamp, bench, tree, fountain, flag) appear
+  by level beside finished buildings and pop in when Şehir opens; buildings themselves never jump.
+  Tapping a building zooms the map in on it (manual pan/zoom, `CityLayout`) and opens its card;
+  a task's detail and Şimdi show its building with its street.
   It is its own world: no real-life rewards.
   Each area builds its own kind in its own district, with roads between: Hayat European homes,
   İş glass offices, Spor sports halls, Yatırım banks (areas added later build homes). Size picks
