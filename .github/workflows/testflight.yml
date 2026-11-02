@@ -23,10 +23,14 @@ on:
         type: string
         default: light
       platform:
-        description: Which app to build (ios or mac)
+        description: Which app to build (ios or mac), or assets to fetch artwork
         type: choice
-        options: [ios, mac]
+        options: [ios, mac, assets]
         default: ios
+      asset_urls:
+        description: "For platform=assets: space-separated name=https://… pairs to download"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -43,8 +47,31 @@ jobs:
       testflight: ${{ inputs.testflight }}
     secrets: inherit
 
+  assets:
+    # Generated artwork (e.g. from Figma Weave) lives on hosts the editing session cannot
+    # reach. This downloads it on the runner and prints it into the log as base64, the same
+    # way as the screenshots. No secrets.
+    if: github.event_name == 'workflow_dispatch' && inputs.platform == 'assets'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and print
+        env:
+          ASSET_URLS: ${{ inputs.asset_urls }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/assets"
+          for pair in $ASSET_URLS; do
+            name="${pair%%=*}"; url="${pair#*=}"
+            [[ "$name" =~ ^[a-z0-9-]+$ ]] || { echo "::error::Bad asset name"; exit 1; }
+            [[ "$url" =~ ^https://media\.weavy\.ai/ ]] || { echo "::error::Only media.weavy.ai URLs are fetched"; exit 1; }
+            curl -fsSL --max-filesize 15000000 -o "$RUNNER_TEMP/assets/$name.png" "$url"
+            echo "SHOT-BEGIN $name"
+            base64 -w 3000 "$RUNNER_TEMP/assets/$name.png" | sed 's/^/SHOT-DATA /'
+            echo "SHOT-END $name"
+          done
+
   build-and-upload:
-    if: github.event_name == 'push' || (inputs.testflight && inputs.platform != 'mac')
+    if: github.event_name == 'push' || (inputs.testflight && inputs.platform == 'ios')
     runs-on: macos-latest
     timeout-minutes: 45
     env:
@@ -219,7 +246,7 @@ jobs:
   # Runs the UI tests on a simulator with invented demo data and keeps a screenshot of every
   # screen (light, dark, large text) as a build artifact, so layout can be reviewed off-device.
   screenshots:
-    if: github.event_name == 'push' || inputs.platform != 'mac'
+    if: github.event_name == 'push' || inputs.platform == 'ios'
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
