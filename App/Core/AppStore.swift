@@ -9,6 +9,13 @@ struct CaptureRequest: Identifiable {
 }
 
 /// A request to park a task, optionally starting another one right after (a switch).
+struct CompletionUndo: Identifiable {
+    let id = UUID()
+    let task: TaskItem
+    let stepIDs: [String]
+    let wasActive: Bool
+}
+
 struct ParkRequest: Identifiable {
     let id = UUID()
     let task: TaskItem
@@ -336,6 +343,14 @@ final class AppStore {
 
     func complete(_ task: TaskItem, source: String = "app") async {
         completions += 1
+        // A finished task can be taken back for a few seconds ("Geri al").
+        if task.parentId == nil, task.status.isOpen {
+            lastCompletion = CompletionUndo(
+                task: task,
+                stepIDs: subtasks(of: task.id).filter { $0.status.isOpen }.map(\.id),
+                wasActive: task.status == .active
+            )
+        }
         await optimistic(PendingRequest("POST", "v1/tasks/\(task.id)/complete", body: ["source": source])) {
             for id in [task.id] + subtasks(of: task.id).map(\.id) {
                 localSet(id) {
@@ -344,6 +359,23 @@ final class AppStore {
                     $0.completedAt = .now
                 }
             }
+        }
+    }
+
+    /// The last finished task, offered back for a few seconds.
+    var lastCompletion: CompletionUndo?
+
+    /// Takes the last "Teslim et" back: the task and the steps it closed open again, and a
+    /// task that was in hand goes back in hand.
+    func undoCompletion() async {
+        guard let undo = lastCompletion else { return }
+        lastCompletion = nil
+        if let task = tasks[undo.task.id] { await reopen(task) }
+        for id in undo.stepIDs {
+            if let step = tasks[id] { await reopen(step) }
+        }
+        if undo.wasActive, activeTask == nil, let task = tasks[undo.task.id] {
+            await start(task, previousNote: nil, previousReason: nil)
         }
     }
 
@@ -552,7 +584,12 @@ final class AppStore {
         guard let task = tasks[taskID] else { return }
         switch action {
         case Reminders.resumeAction:
-            requestStart(task)
+            // Already in hand: just open it instead of "starting" it again.
+            if task.status == .active {
+                openTaskID = taskID
+            } else {
+                requestStart(task)
+            }
         case Reminders.snoozeAction:
             await edit(task) { $0.remindAt = Date.now.addingTimeInterval(3600) }
         case Reminders.doneAction:
@@ -715,6 +752,8 @@ final class AppStore {
         localSet(task.id) {
             $0.status = .active
             $0.startedAt = .now
+            // Back at the site: the reminder to come back has done its job.
+            $0.remindAt = nil
         }
     }
 

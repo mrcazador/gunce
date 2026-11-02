@@ -346,7 +346,8 @@ export async function startTask(req: Request, env: Env, s: Session, id: string):
     ).bind(newId(), source, stamp, id, s.userId),
     // 4. start it
     env.DB.prepare(
-      `UPDATE tasks SET status = 'active', started_at = ?, updated_at = ? WHERE ${startable}
+      // Starting clears the "come back" reminder: the task is in hand now.
+      `UPDATE tasks SET status = 'active', started_at = ?, remind_at = NULL, updated_at = ? WHERE ${startable}
        RETURNING ${TASK_COLUMNS}`,
     ).bind(stamp, stamp, id, s.userId),
   ]);

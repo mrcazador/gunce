@@ -103,7 +103,7 @@ private struct TodaySection: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            ForEach(items.prefix(4)) { item in
+            ForEach(items.prefix(5)) { item in
                 if let id = item.taskID {
                     NavigationLink(value: id) { row(item) }
                 } else {
@@ -140,7 +140,7 @@ private struct TodaySection: View {
 
     private func row(_ item: Item) -> some View {
         HStack(spacing: 12) {
-            Text(item.allDay ? "Tüm gün" : StartTime.clock(item.time))
+            Text(item.time == .distantPast ? "Geçti" : item.allDay ? "Tüm gün" : StartTime.clock(item.time))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 52, alignment: .leading)
@@ -150,7 +150,7 @@ private struct TodaySection: View {
             Spacer(minLength: 0)
             Text(item.source)
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(item.time == .distantPast ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tertiary))
         }
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
@@ -171,6 +171,11 @@ private struct TodaySection: View {
         let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
         var items: [Item] = []
         for task in store.tasks.values where task.status.isOpen && task.deletedAt == nil {
+            // Overdue work comes first, so it is not left behind in the week view.
+            if let due = task.dueAt, due < start {
+                items.append(Item(id: task.id, time: .distantPast, allDay: true, title: task.title, source: "Gecikmiş", taskID: task.id))
+                continue
+            }
             let times = [task.dueAt, task.remindAt].compactMap { $0 }.filter { calendar.isDateInToday($0) }
             if let first = times.min() {
                 items.append(Item(id: task.id, time: first, allDay: false, title: task.title, source: "Görev", taskID: task.id))
@@ -255,9 +260,9 @@ private struct ActiveTaskCard: View {
                 Label("Tüm katlar çıktı; teslim edebilirsin", systemImage: "checkmark.seal")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if note.isEmpty {
-                FirstStepField(task: task)
             }
+            // A new step can always be added here, not only the first one.
+            FirstStepField(task: task, isFirst: progress.total == 0)
 
             ActionRow {
                 ActionButton(title: "İnşaatı durdur", symbol: "pause.fill", prominent: true) {
@@ -281,6 +286,7 @@ private struct ActiveTaskCard: View {
 private struct FirstStepField: View {
     @Environment(AppStore.self) private var store
     let task: TaskItem
+    var isFirst = true
     @State private var text = ""
     @FocusState private var focused: Bool
 
@@ -289,12 +295,12 @@ private struct FirstStepField: View {
             Image(systemName: "plus.circle")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            TextField("İlk adımı yaz", text: $text)
+            TextField(isFirst ? "İlk adımı yaz" : "Adım ekle", text: $text)
                 .focused($focused)
                 .submitLabel(.done)
                 .onSubmit(add)
-                .accessibilityLabel("İlk adım")
-                .accessibilityHint("Yazdığın metin görevin ilk adımı olur")
+                .accessibilityLabel(isFirst ? "İlk adım" : "Yeni adım")
+                .accessibilityHint("Yazdığın metin görevin sonuna yeni bir adım olarak eklenir")
         }
         .frame(minHeight: 44)
     }

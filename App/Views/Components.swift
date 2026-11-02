@@ -191,7 +191,8 @@ struct TaskSwipeActions: ViewModifier {
                     .tint(.gray)
                 }
             }
-            .swipeActions(edge: .trailing) {
+            // No full swipe: finishing a task (and its steps) takes a deliberate tap.
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 if task.status.isOpen {
                     Button("Teslim et", systemImage: "checkmark") {
                         Task { await store.complete(task) }

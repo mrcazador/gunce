@@ -42,6 +42,14 @@ struct MainTabs: View {
         }
         // Soft, rounded type for the game-like look; park notes keep their serif italic.
         .fontDesign(.rounded)
+        .overlay(alignment: .bottom) {
+            if let undo = store.lastCompletion {
+                UndoBanner(undo: undo)
+                    .padding(.bottom, 130)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: store.lastCompletion?.id)
         .sheet(item: $store.captureRequest) { request in
             CaptureSheet(request: request)
         }
@@ -103,6 +111,36 @@ struct MainTabs: View {
             if phase == .active {
                 Task { await store.refresh() }
             }
+        }
+    }
+}
+
+/// "Teslim edildi · Geri al" for a few seconds after finishing a task.
+private struct UndoBanner: View {
+    @Environment(AppStore.self) private var store
+    let undo: CompletionUndo
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.seal.fill")
+                .foregroundStyle(Color.themeSage)
+                .accessibilityHidden(true)
+            Text("“\(undo.task.title)” teslim edildi")
+                .font(.subheadline)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Button("Geri al") {
+                Task { await store.undoCompletion() }
+            }
+            .font(.subheadline.weight(.semibold))
+            .frame(minHeight: 44)
+        }
+        .padding(.horizontal, 16)
+        .background(.regularMaterial, in: Capsule())
+        .padding(.horizontal, 16)
+        .task(id: undo.id) {
+            try? await Task.sleep(for: .seconds(5))
+            if store.lastCompletion?.id == undo.id { store.lastCompletion = nil }
         }
     }
 }
