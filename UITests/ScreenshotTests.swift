@@ -37,6 +37,17 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// The first-run tour, page by page.
+    func testTutorial() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-tutorial"]
+        app.launch()
+        for page in 1...4 {
+            snap("light-00-tutorial-\(page)")
+            if page < 4 { tap(app.buttons["Devam"].firstMatch) }
+        }
+    }
+
     func testSignIn() {
         let app = XCUIApplication()
         app.launchArguments = ["-demo-signed-out"]

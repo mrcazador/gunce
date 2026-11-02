@@ -25,6 +25,7 @@ struct CityView: View {
     @State private var celebrating: CityLevel?
     /// A task opened from a building card, pushed here instead of jumping to Şimdi.
     @State private var openID: String?
+    @State private var showStory = false
 
     static let tile: CGFloat = 78
     static let focusScale: CGFloat = 1.5
@@ -38,7 +39,7 @@ struct CityView: View {
             VStack(spacing: 0) {
                 // While a building is in focus the header steps aside, so the map gets the room.
                 if focusID == nil {
-                    CityHeader(city: city) { focus($0) }
+                    CityHeader(city: city) { showStory = true }
                         .padding(.horizontal)
                         .padding(.bottom, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -95,6 +96,9 @@ struct CityView: View {
             .navigationBarTitleDisplayMode(focusID == nil ? .large : .inline)
             .sheet(item: $selected, onDismiss: unfocus) { building in
                 CityBuildingSheet(building: building) { openID = $0 }
+            }
+            .sheet(isPresented: $showStory) {
+                CityStorySheet(city: city) { focus($0) }
             }
             .navigationDestination(item: $openID) { id in
                 TaskDetailView(taskID: id)
@@ -175,54 +179,121 @@ struct CityView: View {
 
 private struct CityHeader: View {
     let city: CitySummary
-    let open: (CityBuilding) -> Void
+    let openStory: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(city.level.title)
-                    .font(.title2.weight(.semibold))
-                Spacer()
-                Text("\(city.finished) bina")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            Text(city.level.story)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            if let next = city.level.next {
-                VStack(alignment: .leading, spacing: 4) {
-                    ProgressView(value: city.levelProgress)
-                        .tint(Color.themeSage)
-                    Text("\(next.title) için \(next.threshold - city.finished) bina daha · Açılacak: \(next.unlock.lowercased(with: Locale(identifier: "tr")))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        // One quiet row: the level, how far to the next one, and a way into the story. The
+        // story, what the next level adds and the stalled sites live one tap away.
+        Button(action: openStory) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(city.level.title)
+                        .font(.title3.weight(.bold))
+                    if let next = city.level.next {
+                        Text("· \(next.title) için \(city.finished)/\(next.threshold)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !city.stalled.isEmpty {
+                        Label("\(city.stalled.count)", systemImage: "pause.circle")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.orange)
+                            .accessibilityLabel("\(city.stalled.count) inşaat duruyor")
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
-                .accessibilityElement(children: .combine)
+                if let next = city.level.next {
+                    BrickProgress(
+                        done: city.finished - city.level.threshold,
+                        total: next.threshold - city.level.threshold,
+                        height: 10,
+                        label: "\(next.title) için \(next.threshold - city.finished) bina daha"
+                    )
+                }
             }
-            if !city.stalled.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(city.stalled) { building in
-                            Button { open(building) } label: {
-                                Label(building.title, systemImage: building.stage == .abandoned ? "exclamationmark.triangle" : "pause.circle")
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Şehrin hikâyesini ve duran inşaatları açar")
+    }
+}
+
+/// Everything about the city that does not need to be on the map: where it stands in its
+/// story, what the next level brings, and the sites waiting for a step.
+private struct CityStorySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let city: CitySummary
+    let focus: (CityBuilding) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(CityLevel.allCases, id: \.self) { level in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: level.rawValue < city.level.rawValue ? "checkmark.circle.fill"
+                                  : level == city.level ? "largecircle.fill.circle" : "circle.dashed")
+                                .foregroundStyle(level.rawValue <= city.level.rawValue ? Color.themeBrick : Color.secondary)
+                                .font(.title3)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(level == .building ? level.title : "\(level.title) · \(level.threshold) bina")
+                                    .font(.headline)
+                                Text(level.rawValue <= city.level.rawValue ? level.story : "Açılacak: \(level.unlock.lowercased(with: Locale(identifier: "tr")))")
                                     .font(.subheadline)
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 12)
-                                    .frame(minHeight: 36)
-                                    .background(.fill.tertiary, in: Capsule())
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("\(building.idleDays) gündür madde tamamlanmadı")
                         }
+                        .padding(.vertical, 2)
+                        .accessibilityElement(children: .combine)
+                    }
+                } header: {
+                    Text("Şehrin hikâyesi")
+                } footer: {
+                    if let next = city.level.next {
+                        Text("\(next.title) için \(next.threshold - city.finished) bina daha teslim et.")
                     }
                 }
-                .scrollIndicators(.hidden)
-                Text(city.stalled.count == 1 ? "1 inşaat duruyor" : "\(city.stalled.count) inşaat duruyor")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                if !city.stalled.isEmpty {
+                    Section {
+                        ForEach(city.stalled) { building in
+                            Button {
+                                dismiss()
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(350))
+                                    focus(building)
+                                }
+                            } label: {
+                                HStack {
+                                    Label(building.title, systemImage: building.stage == .abandoned ? "exclamationmark.triangle" : "pause.circle")
+                                    Spacer()
+                                    Text("\(building.idleDays) gün")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Duran inşaatlar")
+                    } footer: {
+                        Text("3 gün hiç madde tamamlanmayan inşaat durur, 7 günde terk edilir. Bir madde tamamlamak onu yeniden başlatır.")
+                    }
+                }
+            }
+            .themedBackground()
+            .navigationTitle(city.level.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Bitti") { dismiss() }
+                }
             }
         }
+        .presentationDetents([.medium, .large])
     }
 }
 
@@ -786,10 +857,8 @@ private struct CityBuildingSheet: View {
                         .buttonStyle(.plain)
                 }
 
-                if live.stage != .planned {
-                    ProgressView(value: live.progress)
-                        .tint(Color.themeSage)
-                        .accessibilityLabel("İnşaat ilerlemesi")
+                if live.stepsTotal > 0 {
+                    BrickProgress(done: live.stepsDone, total: live.stepsTotal, label: "\(live.stepsTotal) katın \(live.stepsDone) tanesi çıktı")
                 }
 
                 if let note = live.parkNote, !note.isEmpty, live.stage != .finished {

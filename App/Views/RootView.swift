@@ -20,6 +20,9 @@ struct MainTabs: View {
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: AppTab = .now
+    /// The first-run tour, shown once after the first sign-in.
+    @AppStorage("pickup.onboarded") private var onboarded = false
+    @State private var showTutorial = false
 
     var body: some View {
         @Bindable var store = store
@@ -50,6 +53,14 @@ struct MainTabs: View {
             }
         }
         .animation(.snappy, value: store.lastCompletion?.id)
+        .fullScreenCover(isPresented: $showTutorial, onDismiss: { onboarded = true }) {
+            OnboardingView()
+        }
+        .onAppear {
+            // Demo runs (screenshots) skip the tour unless asked for it with `-tutorial`.
+            let asked = ProcessInfo.processInfo.arguments.contains("-tutorial")
+            if !onboarded && (!store.isDemo || asked) { showTutorial = true }
+        }
         .sheet(item: $store.captureRequest) { request in
             CaptureSheet(request: request)
         }

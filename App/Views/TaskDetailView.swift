@@ -209,8 +209,7 @@ private struct TaskDetailForm: View {
         } footer: {
             if progress.total > 0 {
                 VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: Double(progress.done), total: Double(progress.total))
-                        .tint(Color.primary)
+                    BrickProgress(done: progress.done, total: progress.total, height: 12, label: "")
                         .accessibilityHidden(true)
                     Text("İlk açık adım Şimdi ekranında sıradaki adım olarak görünür. Sıralamak için basılı tutup sürükle.")
                 }

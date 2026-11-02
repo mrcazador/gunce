@@ -412,8 +412,7 @@ private struct NextStepRow: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("\(total) adımın \(done) tanesi bitti")
             }
-            ProgressView(value: Double(done), total: Double(max(total, 1)))
-                .tint(Color.themeSage)
+            BrickProgress(done: done, total: total, height: 12, label: "\(total) adımın \(done) tanesi bitti")
                 .accessibilityHidden(true)
             Button {
                 Task { await store.complete(step) }
