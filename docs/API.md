@@ -28,7 +28,7 @@ Sessions last 90 days and slide forward with use.
 | Method | Path | Body / query |
 | --- | --- | --- |
 | GET | `/v1/tasks` | `status=active,parked`, `area_id`, `parent_id` (`none` = top level), `q`, `limit` ≤ 500 |
-| POST | `/v1/tasks` | `title` (required), `id`, `area_id`, `parent_id`, `details`, `next_step`, `due_at`, `remind_at`, `calendar_event_id`, `sort`, `priority`, `created_via` |
+| POST | `/v1/tasks` | `title` (required), `id`, `area_id`, `parent_id`, `details`, `next_step`, `due_at`, `remind_at`, `calendar_event_id`, `sort`, `priority`, `recurrence`, `created_via` |
 | GET | `/v1/tasks/:id` | Task plus `subtasks` |
 | PATCH | `/v1/tasks/:id` | Content fields only; status changes use the actions below |
 | DELETE | `/v1/tasks/:id` | Soft delete, subtasks too |
@@ -36,6 +36,10 @@ Sessions last 90 days and slide forward with use.
 
 `priority` is the task's size: `1` ufak, `2` orta (default), `3` büyük. It decides how grand the
 task's building is in Şehir. The MCP tools call it `size` (`small`, `medium`, `large`).
+
+`recurrence` makes a task repeat: `daily`, `weekdays` or `weekly` (null = one-off). Completing a
+repeating task closes the current round only: it returns to `inbox` with `completed_at` set, and
+the app treats it as done until the next day (or week). Claude's tools call it `repeat`.
 
 ### State changes
 

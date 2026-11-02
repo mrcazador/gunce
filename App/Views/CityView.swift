@@ -439,6 +439,8 @@ struct CityLayout {
         let originI: Int
         let originJ: Int
         let size: Int
+        /// Times this area's repeating tasks were done: its street furniture.
+        var chores = 0
     }
 
     /// Plots sit this many tile widths apart, leaving a lane between buildings.
@@ -462,7 +464,8 @@ struct CityLayout {
             .map { area in (area, city.buildings.filter { $0.areaId == area.id }) }
         let known = Set(areas.map(\.id))
         groups.append((nil, city.buildings.filter { $0.areaId == nil || !known.contains($0.areaId!) }))
-        groups = groups.filter { !$0.1.isEmpty }
+        // An area with only repeating tasks still gets a district, for its street furniture.
+        groups = groups.filter { !$0.1.isEmpty || (city.chores[$0.0?.id] ?? 0) > 0 }
         let largest = groups.map(\.1.count).max() ?? 1
         let side = max(2, Int(Double(largest).squareRoot().rounded(.up)))
         var plots: [Plot] = []
@@ -470,7 +473,7 @@ struct CityLayout {
         for (index, group) in groups.enumerated() {
             let oi = (index % 2) * (side + 1)
             let oj = (index / 2) * (side + 1)
-            districts.append(District(area: group.0, originI: oi, originJ: oj, size: side))
+            districts.append(District(area: group.0, originI: oi, originJ: oj, size: side, chores: city.chores[group.0?.id] ?? 0))
             // Big buildings take the back plots so they do not hide the small ones.
             let ordered = group.1.sorted { ($0.size.rawValue, $1.createdAt) > ($1.size.rawValue, $0.createdAt) }
             for (n, building) in ordered.enumerated() {
@@ -613,6 +616,25 @@ private struct CityCanvas: View {
                 .modifier(PopIn(delay: PopIn.delay(seed: index * 31 + n, beat: popBeat), beat: popBeat))
                 .position(x: corners[n].0.x, y: corners[n].0.y - tile * corners[n].1.height / 2)
         }
+        // Repeating tasks done in this area: flower beds, trees and benches along its edges,
+        // one more each time, up to sixteen.
+        let chores: [(CGPoint, CityProp)] = {
+            var spots: [CGPoint] = []
+            for f in [0.15, 0.4, 0.65, 0.9] as [CGFloat] {
+                spots.append(layout.point(i - 0.62, j + f * s - 0.5))
+                spots.append(layout.point(i + f * s - 0.5, j - 0.62))
+                spots.append(layout.point(i + s - 0.38, j + f * s - 0.5))
+                spots.append(layout.point(i + f * s - 0.5, j + s - 0.38))
+            }
+            let props = CityProp.street
+            return (0..<min(d.chores, spots.count)).map { n in (spots[n], props[(n + index) % props.count]) }
+        }()
+        ForEach(chores.indices, id: \.self) { n in
+            CityPropView(prop: chores[n].1, tile: tile, glowing: level == .city)
+                .modifier(PopIn(delay: PopIn.delay(seed: index * 17 + n * 5, beat: popBeat), beat: popBeat))
+                .position(x: chores[n].0.x, y: chores[n].0.y - tile * chores[n].1.height / 2)
+                .allowsHitTesting(false)
+        }
     }
 
     // MARK: Buildings
@@ -654,6 +676,10 @@ enum CityProp: String, CaseIterable {
     case tree = "agac"
     case fountain = "cesme"
     case flag = "bayrak"
+    case flowerBed = "tarh"
+    case blossom = "erguvan"
+    case planter = "saksi"
+    case birdhouse = "kus"
 
     var imageName: String { "city-prop-\(rawValue)" }
 
@@ -666,8 +692,15 @@ enum CityProp: String, CaseIterable {
         case .tree: 0.62
         case .fountain: 0.34
         case .flag: 0.6
+        case .flowerBed: 0.22
+        case .blossom: 0.6
+        case .planter: 0.3
+        case .birdhouse: 0.55
         }
     }
+
+    /// What daily work plants along a district's edges, in this order.
+    static let street: [CityProp] = [.flowerBed, .bush, .planter, .blossom, .bench, .tree, .birdhouse, .fountain]
 
     /// What the streets have at each level: bushes at first, then lamps and benches, trees,
     /// and fountains and flags in a full city.
@@ -676,7 +709,7 @@ enum CityProp: String, CaseIterable {
         case .building: [.bush]
         case .site: [.bush, .lamp, .bench]
         case .neighbourhood: [.bush, .lamp, .bench, .tree]
-        case .city: allCases
+        case .city: [.bush, .lamp, .bench, .tree, .fountain, .flag]
         }
     }
 

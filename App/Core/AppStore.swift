@@ -106,7 +106,8 @@ final class AppStore {
 
     var inboxTasks: [TaskItem] {
         tasks.values
-            .filter { $0.status == .inbox && $0.parentId == nil }
+            // Repeating tasks live in Bugün's "Günlük işler", not in the inbox.
+            .filter { $0.status == .inbox && $0.parentId == nil && $0.repeats == nil }
             .sorted(by: Self.listOrder)
     }
 
@@ -344,8 +345,9 @@ final class AppStore {
 
     func complete(_ task: TaskItem, source: String = "app") async {
         completions += 1
-        // A finished task can be taken back for a few seconds ("Geri al").
-        if task.parentId == nil, task.status.isOpen {
+        // A finished task can be taken back for a few seconds ("Geri al"). A repeating task
+        // only closes today's round, so there is nothing to take back.
+        if task.parentId == nil, task.status.isOpen, task.repeats == nil {
             lastCompletion = CompletionUndo(
                 task: task,
                 stepIDs: subtasks(of: task.id).filter { $0.status.isOpen }.map(\.id),
@@ -353,11 +355,20 @@ final class AppStore {
             )
         }
         await optimistic(PendingRequest("POST", "v1/tasks/\(task.id)/complete", body: ["source": source])) {
-            for id in [task.id] + subtasks(of: task.id).map(\.id) {
-                localSet(id) {
-                    guard $0.status.isOpen else { return }
-                    $0.status = .done
+            if task.repeats != nil {
+                // This round is done; the task comes back in the next one.
+                localSet(task.id) {
+                    if $0.status == .active || $0.status == .parked { $0.status = .inbox }
                     $0.completedAt = .now
+                    $0.remindAt = nil
+                }
+            } else {
+                for id in [task.id] + subtasks(of: task.id).map(\.id) {
+                    localSet(id) {
+                        guard $0.status.isOpen else { return }
+                        $0.status = .done
+                        $0.completedAt = .now
+                    }
                 }
             }
         }
@@ -426,6 +437,7 @@ final class AppStore {
         if a.remindAt != b.remindAt { fields["remind_at"] = JSONCoding.value(b.remindAt) }
         if a.sort != b.sort { fields["sort"] = b.sort }
         if a.priority != b.priority { fields["priority"] = b.priority ?? TaskSize.medium.rawValue }
+        if a.recurrence != b.recurrence { fields["recurrence"] = (b.recurrence as Any?) ?? NSNull() }
         if a.calendarEventId != b.calendarEventId { fields["calendar_event_id"] = JSONCoding.value(b.calendarEventId) }
         return fields
     }
@@ -864,6 +876,21 @@ final class AppStore {
         tasks["s2"]?.sort = 1
         // Finished a while ago: moved in (iskan) in the city.
         for id in ["t11", "t12"] { tasks[id]?.completedAt = ago(60 * 24 * 5) }
+        // Repeating tasks: not buildings, but street furniture in their districts.
+        for (id, title, area, repeats) in [("r1", "Sabah yürüyüşü", "a-spor", "daily"),
+                                          ("r2", "Gelen kutusunu sıfırla", "a-is", "weekdays"),
+                                          ("r3", "Haftalık bütçeye bak", "a-yatirim", "weekly")] {
+            var chore = task(id, title, area: area, status: .inbox)
+            chore.recurrence = repeats
+            tasks[id] = chore
+        }
+        tasks["r1"]?.completedAt = ago(60 * 3)
+        for n in 0..<9 {
+            let id = "c\(n)"
+            let owner = n < 6 ? "r1" : n < 8 ? "r2" : "r3"
+            events[id] = TaskEvent(id: id, taskId: owner, kind: "done", note: nil, reason: nil,
+                                   durationSeconds: nil, source: "app", occurredAt: ago(Double(60 * 24 * (n + 1))))
+        }
         // Sizes: the city mixes small, medium and grand buildings.
         for (id, size) in [("t1", 3), ("t3", 3), ("t10", 3), ("t4", 1), ("t7", 1), ("t9", 1), ("t11", 1)] {
             tasks[id]?.priority = size

@@ -94,9 +94,17 @@ private struct TaskDetailForm: View {
                     }
                 }
                 if task.parentId == nil {
-                    Picker("Büyüklük", selection: sizeBinding) {
-                        ForEach(TaskSize.allCases) { size in
-                            Text(size.title).tag(size)
+                    Picker("Tekrar", selection: repeatBinding) {
+                        Text("Yok").tag(Recurrence?.none)
+                        ForEach(Recurrence.allCases) { repeats in
+                            Text(repeats.title).tag(Optional(repeats))
+                        }
+                    }
+                    if task.repeats == nil {
+                        Picker("Büyüklük", selection: sizeBinding) {
+                            ForEach(TaskSize.allCases) { size in
+                                Text(size.title).tag(size)
+                            }
                         }
                     }
                 }
@@ -110,7 +118,9 @@ private struct TaskDetailForm: View {
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    if task.parentId == nil {
+                    if task.repeats != nil {
+                        Text("Tekrarlayan iş teslim edilince kaybolmaz, bir sonraki gün (ya da hafta) yine gelir. Bina olmaz; her yapışında semtine bir çiçek, ağaç ya da bank ekler.")
+                    } else if task.parentId == nil {
                         Text("Büyüklük, iş bittiğinde şehirde nasıl bir bina olacağını seçer: büyük işler daha gösterişli olur.")
                     }
                     if task.dueAt != nil, store.calendarSyncEnabled {
@@ -257,6 +267,13 @@ private struct TaskDetailForm: View {
         Binding(
             get: { task.areaId },
             set: { newValue in Task { await store.edit(task) { $0.areaId = newValue } } }
+        )
+    }
+
+    private var repeatBinding: Binding<Recurrence?> {
+        Binding(
+            get: { task.repeats },
+            set: { newValue in Task { await store.edit(task) { $0.recurrence = newValue?.rawValue } } }
         )
     }
 

@@ -35,6 +35,10 @@ and fix it.
 - Areas (alanlar): **İş, Hayat, Spor, Yatırım**. Users can add more later; colors and SF Symbols
   live in `areas` rows.
 - A task has a status: `inbox`, `active`, `parked`, `done`, `archived`. Subtasks use `parent_id`.
+- A task can repeat (`recurrence`: `daily`, `weekdays`, `weekly`; Claude's tools: `repeat`). Completing it
+  closes the current round only: it returns to `inbox` with `completed_at`, shows as done until the next
+  day/week, and lives in Bugün's "Günlük işler", not the inbox. Repeating tasks are not buildings:
+  each "done" adds street furniture (flower bed, planter, blossom tree, birdhouse…) to its district.
 - A task has a size (`priority`): 1 Ufak, 2 Orta (default), 3 Büyük. It decides how grand its
   building is in Şehir. Claude's tools call it `size` (`small`, `medium`, `large`).
 - **Exactly one active task per user.** Starting a task while another is active auto-parks the
@@ -53,7 +57,8 @@ and fix it.
   (never destroyed); a task without steps counts the last time it was in hand (latest start or park). Finished after
   a week-long wait = landmark. Levels: Bina, Site (5), Mahalle (15), Şehir (40) finished buildings;
   each level changes the streets (dirt → asphalt and lamps → trees → skyline and lit lamps) and
-  is celebrated once. Street props (`city-prop-*`: bush, lamp, bench, tree, fountain, flag) appear
+  is celebrated once. Street props (`city-prop-*`: bush, lamp, bench, tree, fountain, flag, plus tarh, erguvan, saksi, kus
+  planted by repeating tasks) appear
   by level beside finished buildings and pop in when Şehir opens; buildings themselves never jump.
   Tapping a building zooms the map in on it (manual pan/zoom, `CityLayout`) and opens its card;
   a task's detail and Şimdi show its building with its street.

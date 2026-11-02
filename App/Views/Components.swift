@@ -118,6 +118,10 @@ struct TaskRow: View {
                     if showArea, let area = store.area(task.areaId) {
                         AreaLabel(area: area)
                     }
+                    if let repeats = task.repeats {
+                        Label(task.isDoneThisRound() ? "\(repeats.title) · \(repeats == .weekly ? "bu hafta" : "bugün") yapıldı" : repeats.title, systemImage: "repeat")
+                            .foregroundStyle(.secondary)
+                    }
                     let steps = store.progress(of: task.id)
                     if steps.total > 0 {
                         Label("\(steps.done)/\(steps.total)", systemImage: "checklist")
@@ -147,6 +151,7 @@ struct TaskRow: View {
     }
 
     private var statusSymbol: String {
+        if task.isDoneThisRound() { return "checkmark.circle.fill" }
         switch task.status {
         case .active: "play.circle.fill"
         case .parked: "pause.circle"

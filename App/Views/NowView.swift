@@ -124,13 +124,21 @@ private struct TodaySection: View {
     var body: some View {
         let items = todayItems
         let stalled = store.city().stalled
+        let chores = store.tasks.values
+            .filter { $0.parentId == nil && $0.repeats != nil && $0.status != .archived && $0.deletedAt == nil }
+            .filter { $0.isDueThisRound() || $0.isDoneThisRound() }
+            .sorted { ($0.isDoneThisRound() ? 1 : 0, $0.title) < ($1.isDoneThisRound() ? 1 : 0, $1.title) }
         Section {
-            if items.isEmpty {
+            // Daily work first: one tap closes today's round and plants something in the city.
+            ForEach(chores) { task in
+                ChoreRow(task: task)
+            }
+            if items.isEmpty && chores.isEmpty {
                 Text("Bugün için planlanmış bir şey yok.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            ForEach(items.prefix(5)) { item in
+            ForEach(items.filter { item in !chores.contains { $0.id == item.taskID } }.prefix(5)) { item in
                 if let id = item.taskID {
                     NavigationLink(value: id) { row(item) }
                 } else {
@@ -220,6 +228,42 @@ private struct TodaySection: View {
             ))
         }
         return items.sorted { $0.time < $1.time }
+    }
+}
+
+/// A repeating task in Bugün: a circle to tick off today's round, the title, how often.
+private struct ChoreRow: View {
+    @Environment(AppStore.self) private var store
+    let task: TaskItem
+
+    var body: some View {
+        let done = task.isDoneThisRound()
+        HStack(spacing: 12) {
+            Button {
+                if !done { Task { await store.complete(task) } }
+            } label: {
+                Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(done ? Color.themeSage : Color.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(done)
+            .accessibilityLabel(done ? "\(task.title), bugün yapıldı" : "\(task.title), yapıldı olarak işaretle")
+            NavigationLink(value: task.id) {
+                HStack {
+                    Text(task.title)
+                        .strikethrough(done)
+                        .foregroundStyle(done ? .secondary : .primary)
+                    Spacer(minLength: 0)
+                    Label(task.repeats?.title ?? "", systemImage: "repeat")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .frame(minHeight: 44)
     }
 }
 
