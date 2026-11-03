@@ -291,7 +291,7 @@ const tools: Tool[] = [
     name: "start_task",
     title: "Start task",
     description:
-      "Make a task the active one (or resume a parked one). If another task is active it is parked first: ask the user where they left off and pass previous_note.",
+      "Make a task the active one (or resume a parked one). If another task is active it is parked first: ask the user where they left off and pass previous_note. At most 5 tasks can be paused: when a new task would push past that, this fails with paused_limit; ask the user which paused task to finish (complete_task) or let go in the app first.",
     inputSchema: {
       type: "object",
       properties: {
@@ -317,7 +317,7 @@ const tools: Tool[] = [
     name: "park_task",
     title: "Park task",
     description:
-      "Park a task with a one-line note of where the user left off. Without id, parks the active task. Optionally set a reminder to come back.",
+      "Park a task with a one-line note of where the user left off. Without id, parks the active task. Optionally set a reminder to come back. At most 5 tasks can be paused: past that this fails with paused_limit; ask the user which paused task to finish (complete_task) or let go in the app first.",
     inputSchema: {
       type: "object",
       properties: {

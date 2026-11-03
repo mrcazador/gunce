@@ -41,6 +41,9 @@ task's building is in Şehir. The MCP tools call it `size` (`small`, `medium`, `
 repeating task closes the current round only: it returns to `inbox` with `completed_at` set, and
 the app treats it as done until the next day (or week). Claude's tools call it `repeat`.
 
+At most 5 top-level tasks can be `parked` at once. Parking (or a start that parks the active task)
+past that returns `409 paused_limit`; resuming a parked task never counts against it.
+
 ### State changes
 
 | Path | Body | Effect |

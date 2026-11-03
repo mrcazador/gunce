@@ -297,6 +297,28 @@ export async function deleteTask(env: Env, s: Session, id: string): Promise<Resp
 
 // ================================================================= state changes
 
+/**
+ * At most this many top-level tasks can be paused at once: the app's "yarım iş" limit. A new
+ * break past it is refused until one paused task is finished or archived. Resuming a paused
+ * task never counts against it.
+ */
+export const PAUSED_LIMIT = 5;
+
+async function assertPausedRoom(env: Env, userId: string): Promise<void> {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM tasks WHERE user_id = ? AND status = 'parked' AND parent_id IS NULL AND deleted_at IS NULL",
+  )
+    .bind(userId)
+    .first<{ n: number }>();
+  if ((row?.n ?? 0) >= PAUSED_LIMIT) {
+    throw new HttpError(
+      409,
+      "paused_limit",
+      `At most ${PAUSED_LIMIT} tasks can be paused. Finish or archive one paused task first.`,
+    );
+  }
+}
+
 /** SQL for the seconds a task has been active, as of `?` (bound timestamp). */
 const DURATION_SQL =
   "CASE WHEN status = 'active' AND started_at IS NOT NULL THEN CAST(max(0, (julianday(?) - julianday(started_at)) * 86400) AS INTEGER) END";
@@ -331,6 +353,9 @@ export async function startTask(req: Request, env: Env, s: Session, id: string):
   )
     .bind(s.userId)
     .first<{ id: string }>();
+  // Switching parks the current task; a resumed task frees its own slot, so only a new one
+  // can push past the limit.
+  if (previous && previous.id !== id && target.status !== "parked") await assertPausedRoom(env, s.userId);
 
   const results = await env.DB.batch([
     // 1. history row for the task being parked (needs started_at before the update)
@@ -387,6 +412,7 @@ export async function parkTask(req: Request, env: Env, s: Session, id: string | 
   if (!["active", "inbox", "parked"].includes(target.status as string)) {
     throw new HttpError(409, "invalid_state", `Cannot park a ${target.status} task`);
   }
+  if (target.status !== "parked" && !target.parent_id) await assertPausedRoom(env, s.userId);
 
   const cond = "id = ? AND user_id = ? AND status IN ('active', 'inbox', 'parked') AND deleted_at IS NULL";
   const results = await env.DB.batch([
