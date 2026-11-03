@@ -9,11 +9,15 @@ struct MacRootView: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        if store.isSignedIn {
-            MacMainView()
-        } else {
-            MacSignInView()
+        Group {
+            if store.isSignedIn {
+                MacMainView()
+            } else {
+                MacSignInView()
+            }
         }
+        // The soft game theme: rounded type everywhere (park notes keep their serif).
+        .fontDesign(.rounded)
     }
 }
 
@@ -65,7 +69,8 @@ struct MacMainView: View {
         .sheet(item: $store.parkRequest) { request in
             MacParkForm(
                 taskTitle: request.task.title,
-                confirmTitle: request.next == nil ? "Ara ver" : "Ara ver ve geç"
+                confirmTitle: request.next == nil ? "Ara ver" : "Ara ver ve geç",
+                autoNote: store.autoParkNote(for: request.task)
             ) {
                 store.parkRequest = nil
             } onConfirm: { note, reason, remindAt in
@@ -74,6 +79,24 @@ struct MacMainView: View {
             }
             .padding(20)
             .frame(width: 420)
+            .background(Color.themeBackground)
+            .fontDesign(.rounded)
+        }
+        .sheet(item: $store.limitRequest) { request in
+            MacLimitView {
+                store.limitRequest = nil
+            } onFreed: {
+                store.limitRequest = nil
+                // Let this sheet close before the park sheet opens.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    store.continueAfterLimit(request)
+                }
+            }
+            .padding(20)
+            .frame(width: 460)
+            .background(Color.themeBackground)
+            .fontDesign(.rounded)
         }
         .alert(
             "Olmadı",
@@ -123,6 +146,7 @@ struct MacMainView: View {
                     .contextMenu { MacTaskMenu(task: task) }
             }
         }
+        .themedBackground()
         .overlay {
             if tasks.isEmpty {
                 ContentUnavailableView(empty, systemImage: "tray")
@@ -131,7 +155,7 @@ struct MacMainView: View {
         .safeAreaInset(edge: .bottom) {
             MacCaptureField()
                 .padding(10)
-                .background(.bar)
+                .background(Color.themeBackground)
         }
         .navigationTitle(title)
     }
@@ -167,8 +191,7 @@ private struct MacNowColumn: View {
                     MacActiveCard(task: task)
                         .tag(task.id)
                 } else {
-                    Text("Aktif görev yok. Kaldığın yerlerden birine devam et ya da yeni bir görev ekle.")
-                        .foregroundStyle(.secondary)
+                    MacIdleCard(selection: $selection)
                 }
             }
             if !store.parkedTasks.isEmpty {
@@ -178,7 +201,7 @@ private struct MacNowColumn: View {
                             MacTaskRow(task: task)
                             Spacer(minLength: 8)
                             Button("Devam et") { store.requestStart(task) }
-                                .controlSize(.small)
+                                .buttonStyle(ChunkyButtonStyle(prominent: false))
                         }
                         .tag(task.id)
                         .contextMenu { MacTaskMenu(task: task) }
@@ -186,10 +209,11 @@ private struct MacNowColumn: View {
                 }
             }
         }
+        .themedBackground()
         .safeAreaInset(edge: .bottom) {
             MacCaptureField()
                 .padding(10)
-                .background(.bar)
+                .background(Color.themeBackground)
         }
         .navigationTitle("Şimdi")
     }
@@ -201,7 +225,9 @@ private struct MacActiveCard: View {
     let task: TaskItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            MacBuildingImage(taskID: task.id, height: 150)
+                .frame(maxWidth: .infinity)
             HStack {
                 if let area = store.area(task.areaId) {
                     MacAreaLabel(area: area)
@@ -238,18 +264,56 @@ private struct MacActiveCard: View {
                 }
                 .buttonStyle(.plain)
                 .help("Adımı bitir")
+                BrickProgress(done: progress.done, total: progress.total, height: 12,
+                              label: "\(progress.total) adımın \(progress.done) tanesi bitti")
             }
-            HStack {
-                Button("Ara ver", systemImage: "pause.fill") { store.requestPark(task) }
-                    .buttonStyle(.borderedProminent)
-                Button("Bitti", systemImage: "checkmark") {
+            HStack(spacing: 10) {
+                MacChunkyButton(title: "Ara ver", symbol: "pause.fill", prominent: true, fill: true) {
+                    store.requestPark(task)
+                }
+                MacChunkyButton(title: "Bitti", symbol: "checkmark", fill: true) {
                     Task { await store.complete(task) }
                 }
             }
-            .controlSize(.large)
             .padding(.top, 4)
         }
-        .padding(.vertical, 8)
+        .padding(14)
+        .background(Color.themeCard.opacity(0.5), in: RoundedRectangle(cornerRadius: 18))
+        .padding(.vertical, 4)
+    }
+}
+
+/// Nothing in hand: the last paused task and its note, big, ready to pick up.
+private struct MacIdleCard: View {
+    @Environment(AppStore.self) private var store
+    @Binding var selection: String?
+
+    var body: some View {
+        if let task = store.parkedTasks.first {
+            VStack(alignment: .leading, spacing: 10) {
+                MacBuildingImage(taskID: task.id, height: 120)
+                    .frame(maxWidth: .infinity)
+                Text("Kaldığın yer")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(task.title)
+                    .font(.title2.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let note = task.parkNote, !note.isEmpty {
+                    MacParkNote(note: note)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                MacChunkyButton(title: "Devam et", symbol: "play.fill", prominent: true, fill: true) {
+                    store.requestStart(task)
+                }
+            }
+            .padding(14)
+            .background(Color.themeCard.opacity(0.5), in: RoundedRectangle(cornerRadius: 18))
+            .padding(.vertical, 4)
+        } else {
+            Text("Elinde iş yok. Aklına geleni aşağıya yaz ya da gelen kutusundan bir işe başla.")
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

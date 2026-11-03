@@ -20,6 +20,8 @@ struct MacTaskDetail: View {
         if let task {
             Form {
                 Section {
+                    MacBuildingImage(taskID: task.id, height: 130)
+                        .frame(maxWidth: .infinity)
                     TextField("Başlık", text: $title)
                         .font(.title2.weight(.semibold))
                         .focused($focus, equals: .title)
@@ -71,6 +73,7 @@ struct MacTaskDetail: View {
                 }
             }
             .formStyle(.grouped)
+            .themedBackground()
             .navigationTitle(task.title)
             .toolbar {
                 ToolbarItem {
@@ -102,26 +105,23 @@ struct MacTaskDetail: View {
 
     @ViewBuilder
     private func actions(_ task: TaskItem) -> some View {
-        HStack {
+        HStack(spacing: 10) {
             switch task.status {
             case .inbox, .parked:
-                Button(task.status == .parked ? "Devam et" : "Başla", systemImage: "play.fill") {
+                MacChunkyButton(title: task.status == .parked ? "Devam et" : "Başla", symbol: "play.fill", prominent: true) {
                     store.requestStart(task)
                 }
-                .buttonStyle(.borderedProminent)
-                Button("Bitti", systemImage: "checkmark") { Task { await store.complete(task) } }
+                MacChunkyButton(title: "Bitti", symbol: "checkmark") { Task { await store.complete(task) } }
             case .active:
-                Button("Ara ver", systemImage: "pause.fill") { store.requestPark(task) }
-                    .buttonStyle(.borderedProminent)
-                Button("Bitti", systemImage: "checkmark") { Task { await store.complete(task) } }
+                MacChunkyButton(title: "Ara ver", symbol: "pause.fill", prominent: true) { store.requestPark(task) }
+                MacChunkyButton(title: "Bitti", symbol: "checkmark") { Task { await store.complete(task) } }
             case .done, .archived:
-                Button("Yeniden aç", systemImage: "arrow.counterclockwise") {
+                MacChunkyButton(title: "Yeniden aç", symbol: "arrow.counterclockwise", prominent: true) {
                     Task { await store.reopen(task) }
                 }
-                .buttonStyle(.borderedProminent)
             }
         }
-        .controlSize(.large)
+        .padding(.vertical, 4)
     }
 
     private func stepsSection(_ task: TaskItem) -> some View {
@@ -140,7 +140,7 @@ struct MacTaskDetail: View {
                         }
                     } label: {
                         Image(systemName: step.status.isOpen ? "circle" : "checkmark.circle.fill")
-                            .foregroundStyle(step.status.isOpen ? .secondary : .primary)
+                            .foregroundStyle(step.status.isOpen ? Color.secondary : Color.themeSage)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(step.status.isOpen ? "\(step.title), bitti olarak işaretle" : "\(step.title), yeniden aç")
@@ -175,8 +175,8 @@ struct MacTaskDetail: View {
             }
         } footer: {
             if progress.total > 0 {
-                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
-                    .tint(Color.primary)
+                BrickProgress(done: progress.done, total: progress.total,
+                              label: "\(progress.total) adımın \(progress.done) tanesi bitti")
             } else {
                 Text("İşi küçük adımlara böl; ilk açık adım Şimdi'de görünür.")
             }
