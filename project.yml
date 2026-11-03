@@ -128,6 +128,7 @@ targets:
           - "LockScreenSync.swift"
       - path: Shared/LockScreen.swift
       - path: Shared/StartTime.swift
+      - path: App/Theme
     settings:
       base:
         PRODUCT_NAME: PickUp

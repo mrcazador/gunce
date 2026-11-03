@@ -742,31 +742,6 @@ struct CityPropView: View {
     }
 }
 
-/// Pops a prop in from nothing with a little overshoot, after a short delay. Runs each time
-/// `beat` changes; with Reduce Motion the beat never changes and props simply stand there.
-struct PopIn: ViewModifier {
-    let delay: Double
-    let beat: Int
-
-    /// A delay of up to a second, different on every opening, so props pop in a loose order.
-    static func delay(seed: Int, beat: Int) -> Double {
-        Double((seed &* 7 &+ beat &* 13) % 12) * 0.09
-    }
-
-    func body(content: Content) -> some View {
-        content.keyframeAnimator(initialValue: CGFloat(1), trigger: beat) { view, scale in
-            view.scaleEffect(scale, anchor: .bottom)
-        } keyframes: { _ in
-            KeyframeTrack {
-                LinearKeyframe(0, duration: 0.01)
-                LinearKeyframe(0, duration: max(0.01, delay))
-                SpringKeyframe(1.2, duration: 0.16)
-                SpringKeyframe(1, duration: 0.4, spring: .bouncy)
-            }
-        }
-    }
-}
-
 /// The skyline at level Şehir: a soft row of towers with a few lit windows.
 private struct CitySkyline: View {
     let width: CGFloat
@@ -1000,30 +975,5 @@ private struct StepRow: View {
         .buttonStyle(.plain)
         .disabled(done)
         .accessibilityLabel(done ? "\(step.title), tamamlandı" : "\(step.title), tamamla")
-    }
-}
-
-enum CityText {
-    static func stage(_ b: CityBuilding) -> String {
-        switch b.stage {
-        case .planned:
-            return "Arsa hazır. Başlayınca temel atılır."
-        case .rising:
-            return b.stepsTotal > 0 ? "Kat \(b.stepsDone)/\(b.stepsTotal) · inşaat sürüyor" : "İnşaat sürüyor"
-        case .stalled:
-            return b.stepsTotal > 0
-                ? "\(b.idleDays) gündür adım tamamlanmadı; inşaat duruyor"
-                : "\(b.idleDays) gündür el sürülmedi; inşaat duruyor"
-        case .abandoned:
-            return b.stepsTotal > 0
-                ? "\(b.idleDays) gündür adım tamamlanmadı; terk edilmiş"
-                : "\(b.idleDays) gündür el sürülmedi; terk edilmiş"
-        case .finished:
-            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra bitirdin." : "\(b.size.title) bina · bitti"
-        }
-    }
-
-    static func accessibility(_ b: CityBuilding) -> String {
-        "\(b.title). \(stage(b))"
     }
 }

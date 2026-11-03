@@ -8,15 +8,27 @@ struct MenuBarPanel: View {
     @Environment(\.openWindow) private var openWindow
     /// A park or a switch waiting for its "nerede kaldın?" note, shown inline.
     @State private var pending: ParkRequest?
+    /// A break waiting for a free slot under the paused-work limit.
+    @State private var limited: ParkRequest?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if !store.isSignedIn {
                 signedOut
+            } else if let request = limited {
+                MacLimitView {
+                    withAnimation(.snappy) { limited = nil }
+                } onFreed: {
+                    withAnimation(.snappy) {
+                        limited = nil
+                        pending = request
+                    }
+                }
             } else if let pending {
                 MacParkForm(
                     taskTitle: pending.task.title,
-                    confirmTitle: pending.next == nil ? "Ara ver" : "Ara ver ve geç"
+                    confirmTitle: pending.next == nil ? "Ara ver" : "Ara ver ve geç",
+                    autoNote: store.autoParkNote(for: pending.task)
                 ) {
                     withAnimation(.snappy) { self.pending = nil }
                 } onConfirm: { note, reason, remindAt in
@@ -34,6 +46,8 @@ struct MenuBarPanel: View {
         }
         .padding(14)
         .frame(width: 340)
+        .background(Color.themeBackground)
+        .fontDesign(.rounded)
     }
 
     // MARK: - Sections
@@ -85,28 +99,28 @@ struct MenuBarPanel: View {
                     .buttonStyle(.plain)
                     .help("Adımı bitir")
                     .accessibilityLabel("Sıradaki adım: \(step.title). Bitti olarak işaretle")
+                    BrickProgress(done: progress.done, total: progress.total, height: 10,
+                                  label: "\(progress.total) adımın \(progress.done) tanesi bitti")
                 }
-                HStack {
-                    Button {
-                        withAnimation(.snappy) { pending = ParkRequest(task: task, next: nil) }
-                    } label: {
-                        Label("Ara ver", systemImage: "pause.fill")
-                            .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    MacChunkyButton(title: "Ara ver", symbol: "pause.fill", prominent: true, fill: true) {
+                        withAnimation(.snappy) {
+                            let request = ParkRequest(task: task, next: nil)
+                            if store.parkedTasks.count >= AppStore.pausedLimit {
+                                limited = request
+                            } else {
+                                pending = request
+                            }
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    Button {
+                    MacChunkyButton(title: "Bitti", symbol: "checkmark", fill: true) {
                         Task { await store.complete(task) }
-                    } label: {
-                        Label("Bitti", systemImage: "checkmark")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
                 }
-                .controlSize(.large)
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
-                Label("Aktif görev yok", systemImage: "bookmark")
+                Label("Elinde iş yok", systemImage: "bookmark")
                     .font(.headline)
                 Text(store.parkedTasks.isEmpty
                      ? "Aklına geleni yaz ya da gelen kutusundan bir görev başlat."
@@ -140,7 +154,7 @@ struct MenuBarPanel: View {
                         }
                         Spacer(minLength: 4)
                         Button("Devam et") { resume(task) }
-                            .controlSize(.small)
+                            .buttonStyle(ChunkyButtonStyle(prominent: false))
                     }
                 }
             }

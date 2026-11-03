@@ -8,6 +8,7 @@ on:
     paths:
       - "Mac/**"
       - "App/Core/**"
+      - "App/Theme/**"
       - "Shared/LockScreen.swift"
       - "Shared/StartTime.swift"
       - "project.yml"

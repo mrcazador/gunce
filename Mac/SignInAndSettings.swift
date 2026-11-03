@@ -10,8 +10,10 @@ struct MacSignInView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "bookmark.fill")
-                .font(.system(size: 48))
+            Image("city-hayat-final2")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 180)
                 .accessibilityHidden(true)
             VStack(spacing: 6) {
                 Text("PickUp")
@@ -41,6 +43,7 @@ struct MacSignInView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.themeBackground)
         .alert(
             "Giriş yapılamadı",
             isPresented: Binding(
@@ -133,6 +136,8 @@ struct MacSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .themedBackground()
+        .fontDesign(.rounded)
         .frame(width: 440)
         .task { notificationStatus = await Reminders.status() }
     }

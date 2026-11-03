@@ -51,7 +51,7 @@ and fix it.
   leave work half-done. Every new choice costs them; prefer defaults and asking later:
   - "Ara ver" asks for one line only; reason and reminder sit under a closed "Neden ve
     hatırlatma". An empty note becomes "Sıradaki adım: …".
-  - At most 5 paused tasks (`AppStore.pausedLimit`). A new break or switch past that opens a
+  - At most 5 paused tasks (`AppStore.pausedLimit`, enforced by the Worker too: `409 paused_limit`). A new break or switch past that opens a
     sheet to finish or let go ("Bırak" = archive) one first; then it goes ahead by itself.
   - A daily 09:30 "Günün toparlanması" notification and the "Toparla" row on Şimdi go through
     paused tasks one by one: Devam et / Yarına / Bırak.

@@ -297,3 +297,29 @@ extension AppStore {
         return false
     }
 }
+
+/// How a building is described in cards and to VoiceOver.
+enum CityText {
+    static func stage(_ b: CityBuilding) -> String {
+        switch b.stage {
+        case .planned:
+            return "Arsa hazır. Başlayınca temel atılır."
+        case .rising:
+            return b.stepsTotal > 0 ? "Kat \(b.stepsDone)/\(b.stepsTotal) · inşaat sürüyor" : "İnşaat sürüyor"
+        case .stalled:
+            return b.stepsTotal > 0
+                ? "\(b.idleDays) gündür adım tamamlanmadı; inşaat duruyor"
+                : "\(b.idleDays) gündür el sürülmedi; inşaat duruyor"
+        case .abandoned:
+            return b.stepsTotal > 0
+                ? "\(b.idleDays) gündür adım tamamlanmadı; terk edilmiş"
+                : "\(b.idleDays) gündür el sürülmedi; terk edilmiş"
+        case .finished:
+            return b.isLandmark ? "Anıt yapı: uzun bir aradan sonra bitirdin." : "\(b.size.title) bina · bitti"
+        }
+    }
+
+    static func accessibility(_ b: CityBuilding) -> String {
+        "\(b.title). \(stage(b))"
+    }
+}
