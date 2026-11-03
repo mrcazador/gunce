@@ -55,13 +55,20 @@ and fix it.
     sheet to finish or let go ("Bırak" = archive) one first; then it goes ahead by itself.
   - A daily 09:30 "Günün toparlanması" notification and the "Toparla" row on Şimdi go through
     paused tasks one by one: Devam et / Yarına / Bırak.
-  - Size is asked after finishing (in the "bitti · Geri al" banner), not up front; area is
+  - Size is asked after finishing (in the "bitti · Geri al" banner), not up front, and can be
+    set or changed any time under "Büyüklük" in the task's menu (iPhone and Mac); area is
     guessed from earlier tasks' titles when not picked.
   - With nothing in hand, Şimdi shows the last paused task and its note, big.
 - Reminders are app notifications (Said no longer uses Apple Reminders). Calendar sync is both
   ways: timed tasks go to a dedicated "PickUp" calendar, and calendar events appear in "Bugün"
   (under Şimdi, with the full day and week behind "Haftayı gör").
 - Tasks Claude creates have `created_via = 'claude'`.
+- **Voice notes** ("Söyle", the mic in the capture bar): speech is turned into text on the phone
+  (`SFSpeechRecognizer`, tr-TR); only the text goes to `POST /v1/voice`, where Claude
+  (`worker/src/voice.ts`, structured output) reads it against the user's open tasks and returns
+  a plan (create task, steps, note, park, schedule, complete, update). The app applies the plan
+  through the ordinary endpoints and offers "Geri al". The Worker stores no transcript; the key is
+  the `ANTHROPIC_API_KEY` Worker secret, set by `deploy-worker.yml` from the repository secret.
 - **Şehir** (gamification): every top-level task is a building, derived from tasks and İz only
   (`App/Core/City.swift`, nothing entered by hand). Steps raise floors. A site is judged by its
   steps, active or parked alike: no step checked off for 3+ days = stalled, 7+ days = abandoned

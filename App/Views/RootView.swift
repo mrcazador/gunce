@@ -46,13 +46,18 @@ struct MainTabs: View {
         // Soft, rounded type for the game-like look; park notes keep their serif italic.
         .fontDesign(.rounded)
         .overlay(alignment: .bottom) {
-            if let undo = store.lastCompletion {
+            if let undo = store.lastVoice {
+                VoiceBanner(undo: undo)
+                    .padding(.bottom, 130)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let undo = store.lastCompletion {
                 UndoBanner(undo: undo)
                     .padding(.bottom, 130)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.snappy, value: store.lastCompletion?.id)
+        .animation(.snappy, value: store.lastVoice?.id)
         .fullScreenCover(isPresented: $showTutorial, onDismiss: { onboarded = true }) {
             OnboardingView()
         }
@@ -63,6 +68,9 @@ struct MainTabs: View {
         }
         .sheet(item: $store.captureRequest) { request in
             CaptureSheet(request: request)
+        }
+        .sheet(isPresented: $store.voiceRequested) {
+            VoiceSheet()
         }
         .sheet(item: $store.limitRequest) { request in
             LimitSheet(request: request)

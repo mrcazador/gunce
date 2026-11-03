@@ -81,6 +81,18 @@ jobs:
           fi
           npx wrangler deploy --var "APPLE_BUNDLE_IDS:${APPLE_BUNDLE_ID},${APPLE_BUNDLE_ID}.mac"
 
+      - name: Set the Claude API key for voice notes
+        # Optional: without the ANTHROPIC_API_KEY repository secret, /v1/voice answers 503.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY is not set; voice notes stay off."
+            exit 0
+          fi
+          printf '%s' "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY > /dev/null
+          echo "Voice notes key set."
+
       - name: Smoke test
         run: |
           sub="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \

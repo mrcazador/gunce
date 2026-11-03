@@ -6,23 +6,38 @@ struct CaptureBar: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        Button {
-            store.captureRequest = CaptureRequest()
-        } label: {
-            HStack(spacing: 10) {
-                Text("Aklına geleni yaz…")
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                Image(systemName: "plus.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.primary)
+        HStack(spacing: 4) {
+            Button {
+                store.captureRequest = CaptureRequest()
+            } label: {
+                HStack(spacing: 10) {
+                    Text("Aklına geleni yaz…")
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.primary)
+                }
+                .padding(.leading, 16)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Yeni görev ekle")
+            // Say it instead: tasks, steps, notes and reminders from one spoken note.
+            Button {
+                store.voiceRequested = true
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.themeBrick)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 8)
+            .accessibilityLabel("Sesli not")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Yeni görev ekle")
     }
 }
 

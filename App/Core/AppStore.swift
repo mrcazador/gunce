@@ -55,6 +55,10 @@ final class AppStore {
     var errorMessage: String? = nil
     /// The quick-capture sheet, optionally with a date already set (from the calendar).
     var captureRequest: CaptureRequest? = nil
+    /// The voice note sheet is open.
+    var voiceRequested = false
+    /// What the last voice note changed, offered back for a few seconds.
+    var lastVoice: VoiceUndo? = nil
     /// A task to open, e.g. from a notification tap.
     var openTaskID: String? = nil
     /// Whether tasks with a date are written to the PickUp calendar in Apple Calendar.
@@ -303,9 +307,11 @@ final class AppStore {
     // after, and a failure rolls the change back and shows the error. The server stays the
     // source of truth through the sync that follows every change.
 
-    func capture(_ title: String, areaId: String? = nil, parentId: String? = nil, dueAt: Date? = nil) async {
+    /// Adds a task (or a step, with `parentId`) to the inbox. Returns the new task's id.
+    @discardableResult
+    func capture(_ title: String, areaId: String? = nil, parentId: String? = nil, dueAt: Date? = nil) async -> String? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return nil }
         // No area picked: guess it from earlier tasks, so most captures need no choice.
         let area = areaId ?? (parentId == nil ? guessArea(for: trimmed) : nil)
         let id = UUID().uuidString.lowercased()
@@ -323,6 +329,20 @@ final class AppStore {
                 $0.dueAt = dueAt
             }
         }
+        return tasks[id] == nil ? nil : id
+    }
+
+    // MARK: - Voice notes
+
+    /// Sends what was said (text only; speech is recognised on the device) and gets back the
+    /// changes Claude read in it. Demo runs answer with a plain new task.
+    func interpretVoice(_ transcript: String) async throws -> VoicePlan {
+        guard let api else {
+            if isDemo { return VoicePlan.demo(transcript) }
+            throw APIError(status: 0, code: "not_configured", message: nil)
+        }
+        let now = Date.ISO8601FormatStyle(timeZoneSeparator: .colon, timeZone: .current).format(.now)
+        return try await api.request("POST", "v1/voice", body: ["transcript": transcript, "now": now], as: VoicePlan.self)
     }
 
     /// Starts a task. If another task is active, asks for a "nerede kaldın?" note first.

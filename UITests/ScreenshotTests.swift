@@ -76,6 +76,14 @@ final class ScreenshotTests: XCTestCase {
             tap(app.buttons["Vazgeç"].firstMatch)
         }
 
+        if tap(app.buttons["Sesli not"].firstMatch) {
+            snap("\(prefix)-04b-voice")
+            if tap(app.buttons["voice-done"].firstMatch) {
+                sleep(3)
+                snap("\(prefix)-04c-voice-banner")
+            }
+        }
+
         if tap(app.buttons["Ayarlar"].firstMatch) {
             snap("\(prefix)-05-ayarlar")
             if tap(app.staticTexts["Profilim"].firstMatch) {

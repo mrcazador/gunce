@@ -336,6 +336,8 @@ struct MacTaskMenu: View {
         case .done, .archived:
             Button("Yeniden aç") { Task { await store.reopen(task) } }
         }
+        Divider()
+        TaskSizeMenu(task: task)
         if task.status != .active, task.status != .archived {
             Divider()
             Button("Arşivle") { Task { await store.archive(task) } }

@@ -78,6 +78,7 @@ struct MacTaskDetail: View {
             .toolbar {
                 ToolbarItem {
                     Menu("Diğer", systemImage: "ellipsis.circle") {
+                        TaskSizeMenu(task: task)
                         if task.status != .active, task.status != .archived {
                             Button("Arşivle", systemImage: "archivebox") {
                                 Task { await store.archive(task) }

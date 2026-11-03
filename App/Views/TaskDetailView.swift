@@ -144,6 +144,7 @@ private struct TaskDetailForm: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("Diğer", systemImage: "ellipsis") {
+                    TaskSizeMenu(task: task)
                     if task.status == .inbox || task.status == .parked {
                         Button("Arşivle", systemImage: "archivebox") {
                             Task { await store.archive(task) }

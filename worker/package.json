@@ -8,6 +8,7 @@
     "migrate:local": "wrangler d1 migrations apply gunce --local"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.1.0",
     "jose": "6.2.12"
   },
   "devDependencies": {

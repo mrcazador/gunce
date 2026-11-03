@@ -4,6 +4,8 @@ export interface Env {
   DB: D1Database;
   /** Comma-separated bundle IDs accepted as the `aud` of Apple identity tokens. */
   APPLE_BUNDLE_IDS: string;
+  /** Worker secret for voice notes (`wrangler secret put ANTHROPIC_API_KEY`). Optional. */
+  ANTHROPIC_API_KEY?: string;
 }
 
 export class HttpError extends Error {

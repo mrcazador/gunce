@@ -71,6 +71,8 @@ targets:
             CFBundleURLSchemes: [pickup]
         ITSAppUsesNonExemptEncryption: false
         NSCalendarsFullAccessUsageDescription: Tarihli görevlerini PickUp takvimine yazmak ve takvimindeki etkinlikleri Bugün ekranında göstermek için.
+        NSMicrophoneUsageDescription: Sesli notlarını dinleyip yazıya dökmek için. Ses kaydedilmez.
+        NSSpeechRecognitionUsageDescription: Söylediğini yazıya dökmek için; görevlerin bu yazıdan düzenlenir.
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIApplicationSceneManifest:
