@@ -1,26 +1,5 @@
 import SwiftUI
 
-extension Area {
-    /// Color means area only. Unknown names fall back to gray.
-    var tint: Color {
-        switch color {
-        case "indigo": .indigo
-        case "pink": .pink
-        case "orange": .orange
-        case "green": .green
-        case "blue": .blue
-        case "red": .red
-        case "purple": .purple
-        case "teal": .teal
-        case "mint": .mint
-        case "cyan": .cyan
-        case "yellow": .yellow
-        case "brown": .brown
-        default: .gray
-        }
-    }
-}
-
 /// Area name with its SF Symbol, always together with the color.
 struct AreaLabel: View {
     let area: Area

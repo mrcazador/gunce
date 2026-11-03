@@ -21,29 +21,29 @@ struct MacChunkyButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(maxWidth: fill ? .infinity : nil, minHeight: 34)
-                .padding(.horizontal, 4)
                 .contentShape(Rectangle())
         }
         .buttonStyle(ChunkyButtonStyle(prominent: prominent))
     }
 }
 
-/// The task's building in Şehir, as it stands today.
+/// The task's building in Şehir as it stands today, with a little street around it.
 struct MacBuildingImage: View {
     @Environment(AppStore.self) private var store
     let taskID: String
     var height: CGFloat = 120
 
     var body: some View {
-        if let building = store.city().buildings.first(where: { $0.id == taskID }) {
-            Image(building.imageName)
-                .resizable()
-                .scaledToFit()
-                .saturation(building.stage == .stalled ? 0.7 : 1)
-                .opacity(building.stage == .planned ? 0.55 : 1)
-                .frame(height: height)
-                .accessibilityLabel(CityText.accessibility(building))
+        let city = store.city()
+        if let building = city.buildings.first(where: { $0.id == taskID }) {
+            CityBuildingShowcase(
+                building: building,
+                level: city.level,
+                tile: height * CityBuildingImage.tileShare / CityBuildingImage.aspect
+            )
         }
     }
 }

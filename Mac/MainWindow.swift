@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum MacSection: Hashable {
-    case now, inbox, parked, today, done
+    case now, inbox, parked, today, done, city
     case area(String)
 }
 
@@ -37,6 +37,7 @@ struct MacMainView: View {
                     sidebarRow("Kaldığın yerler", "pause.circle", .parked, count: store.parkedTasks.count)
                     sidebarRow("Bugün", "calendar", .today, count: todayTasks.count)
                     sidebarRow("Bitenler", "checkmark.circle", .done, count: 0)
+                    sidebarRow("Şehir", "building.2", .city, count: 0)
                 }
                 Section("Alanlar") {
                     ForEach(store.sortedAreas) { area in
@@ -49,7 +50,7 @@ struct MacMainView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         } content: {
             content
-                .navigationSplitViewColumnWidth(min: 280, ideal: 340)
+                .navigationSplitViewColumnWidth(min: 280, ideal: section == .city ? 520 : 340)
         } detail: {
             if let selection, store.tasks[selection] != nil {
                 MacTaskDetail(taskID: selection)
@@ -133,6 +134,8 @@ struct MacMainView: View {
             taskList("Bugün", todayTasks, empty: "Bugün için tarihli görev yok.")
         case .done:
             taskList("Bitenler", doneTasks, empty: "Henüz biten görev yok.")
+        case .city:
+            MacCityColumn(selection: $selection)
         case .area(let id):
             taskList(store.area(id)?.name ?? "Alan", store.topLevelTasks(area: id, open: true), empty: "Bu alanda açık görev yok.")
         }
