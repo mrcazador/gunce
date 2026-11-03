@@ -55,7 +55,8 @@ and fix it.
     sheet to finish or let go ("Bırak" = archive) one first; then it goes ahead by itself.
   - A daily 09:30 "Günün toparlanması" notification and the "Toparla" row on Şimdi go through
     paused tasks one by one: Devam et / Yarına / Bırak.
-  - Size is asked after finishing (in the "bitti · Geri al" banner), not up front; area is
+  - Size is asked after finishing (in the "bitti · Geri al" banner), not up front, and can be
+    set or changed any time under "Büyüklük" in the task's menu (iPhone and Mac); area is
     guessed from earlier tasks' titles when not picked.
   - With nothing in hand, Şimdi shows the last paused task and its note, big.
 - Reminders are app notifications (Said no longer uses Apple Reminders). Calendar sync is both
