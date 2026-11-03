@@ -65,6 +65,19 @@ record `claude`.
 `events` changed since the last call, plus the next `server_time`. Upsert by `id`. If
 `has_more` is true, call again with the returned `server_time`.
 
+## Voice notes
+
+`POST /v1/voice` (`transcript`: what was said, up to 4000 characters, turned into text on the
+device; `now`: the device's local time as ISO 8601 with its offset). App sessions only. The
+Worker reads the transcript with Claude against the user's open tasks and returns
+`{ summary, actions }`; it stores no transcript. Each action has `kind` (`create_task`,
+`add_steps`, `note`, `park`, `schedule`, `complete`, `update`), `task_id` (one of the user's
+open tasks or steps) or `task_ref` (the `ref` of a `create_task` earlier in the same plan),
+`title`, `steps`, `note`, `reason`, `area_id`, `priority`, `due_at`, `remind_at`. Actions that
+point anywhere else are dropped. The app applies the plan through the endpoints above.
+At most 150 requests a user per 24 hours (`429 voice_limit`); `503 voice_not_configured`
+when the `ANTHROPIC_API_KEY` Worker secret is not set.
+
 ## Devices
 
 `PUT /v1/device-tokens` (`apns_token`, `environment`: `sandbox` | `production`) ·

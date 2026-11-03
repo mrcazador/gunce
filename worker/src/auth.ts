@@ -167,6 +167,7 @@ export async function deleteAccount(env: Env, userId: string): Promise<Response>
     env.DB.prepare("DELETE FROM tasks WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM areas WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM device_tokens WHERE user_id = ?").bind(userId),
+    env.DB.prepare("DELETE FROM voice_requests WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
   ]);
