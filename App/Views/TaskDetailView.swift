@@ -70,14 +70,27 @@ private struct TaskDetailForm: View {
                     .focused($focus, equals: .details)
             }
 
-            if task.status == .parked || task.parkNote?.isEmpty == false {
-                Section("Kaldığın yer") {
+            if task.parentId == nil, task.status.isOpen || task.parkNote?.isEmpty == false {
+                Section {
                     if let note = task.parkNote, !note.isEmpty {
                         ParkNoteText(note: note)
+                    } else {
+                        Text("Nerede olduğunu söyle, not buraya yazılsın.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                     if let reason = task.parkReason, task.status == .parked {
                         Label(reason.title, systemImage: reason.symbol)
                             .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    HStack {
+                        Text("Kaldığın yer")
+                        Spacer()
+                        if task.status.isOpen {
+                            NoteVoiceButton(task: task)
+                                .textCase(nil)
+                        }
                     }
                 }
             }

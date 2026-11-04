@@ -5,7 +5,7 @@ import { type Env, errorResponse, HttpError, isUuid, json } from "./http";
 import { mcp } from "./mcp";
 import * as oauth from "./oauth";
 import * as t from "./tasks";
-import { voice } from "./voice";
+import { transcribe, voice } from "./voice";
 
 type Handler = (ctx: {
   req: Request;
@@ -71,6 +71,7 @@ authed("GET", "/v1/tasks/:id/events", ({ env, params }, s) => t.listEvents(env, 
 
 // ---------------------------------------------------------------- voice notes
 authed("POST", "/v1/voice", ({ req, env }, s) => voice(req, env, s));
+authed("POST", "/v1/voice/transcribe", ({ req, env }, s) => transcribe(req, env, s));
 
 // ---------------------------------------------------------------- Claude connector (MCP + OAuth)
 route("GET", "/.well-known/oauth-protected-resource(?:/mcp)?", false, async ({ url }) =>

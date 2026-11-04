@@ -6,6 +6,8 @@ export interface Env {
   APPLE_BUNDLE_IDS: string;
   /** Worker secret for voice notes (`wrangler secret put ANTHROPIC_API_KEY`). Optional. */
   ANTHROPIC_API_KEY?: string;
+  /** Worker secret for speech to text (ElevenLabs Scribe). Optional; without it the app uses Apple's. */
+  ELEVENLABS_API_KEY?: string;
 }
 
 export class HttpError extends Error {

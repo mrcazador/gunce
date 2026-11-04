@@ -2,9 +2,49 @@ import AVFoundation
 import Speech
 import SwiftUI
 
-/// Speech to text in Turkish. Nothing is recorded: recognition runs on the phone where it
-/// supports Turkish on-device (otherwise through Apple's speech service), and only the text
-/// is used afterwards.
+/// Writes the microphone to an .m4a file (AAC) while Apple's recogniser shows a live preview.
+/// The audio thread writes, the main actor closes; a lock keeps them apart.
+final class AudioSink: @unchecked Sendable {
+    let url: URL
+    private let lock = NSLock()
+    private var file: AVAudioFile?
+
+    init?(format: AVAudioFormat) {
+        url = FileManager.default.temporaryDirectory.appendingPathComponent("voice-\(UUID().uuidString).m4a")
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: format.sampleRate,
+            AVNumberOfChannelsKey: format.channelCount,
+            AVEncoderBitRateKey: 64000,
+        ]
+        guard let file = try? AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false) else {
+            return nil
+        }
+        self.file = file
+    }
+
+    func write(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        defer { lock.unlock() }
+        try? file?.write(from: buffer)
+    }
+
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        file?.close()
+        file = nil
+    }
+
+    func discard() {
+        close()
+        try? FileManager.default.removeItem(at: url)
+    }
+}
+
+/// Listens in Turkish. The recording goes to the server's speech to text (ElevenLabs Scribe)
+/// when the note is finished; Apple's recogniser only shows a live preview while you talk, and
+/// stands in when the server's speech to text is not available. The file is deleted afterwards.
 @MainActor
 @Observable
 final class Dictation {
@@ -20,57 +60,77 @@ final class Dictation {
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
+    @ObservationIgnored private var sink: AudioSink?
 
     func start() async {
         guard phase != .listening else { return }
-        guard await Self.authorize() else {
-            phase = .failed("Mikrofon ve konuşma tanıma izni gerekiyor. Ayarlar'dan PickUp için açabilirsin.")
+        guard await AVAudioApplication.requestRecordPermission() else {
+            phase = .failed("Mikrofon izni gerekiyor. Ayarlar'dan PickUp için açabilirsin.")
             return
         }
-        guard let recognizer, recognizer.isAvailable else {
-            phase = .failed("Konuşma tanıma şu an kullanılamıyor. Biraz sonra yeniden dene.")
-            return
-        }
+        // The live preview is a nicety: without speech recognition the recording still works.
+        let preview = await Self.speechAuthorized()
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .measurement, options: .duckOthers)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
 
-            let request = SFSpeechAudioBufferRecognitionRequest()
-            request.shouldReportPartialResults = true
-            request.addsPunctuation = true
-            if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+            var request: SFSpeechAudioBufferRecognitionRequest?
+            if preview, let recognizer, recognizer.isAvailable {
+                let r = SFSpeechAudioBufferRecognitionRequest()
+                r.shouldReportPartialResults = true
+                r.addsPunctuation = true
+                if recognizer.supportsOnDeviceRecognition { r.requiresOnDeviceRecognition = true }
+                request = r
+            }
             self.request = request
 
             let input = engine.inputNode
+            let format = input.outputFormat(forBus: 0)
+            let sink = AudioSink(format: format)
+            self.sink = sink
+            guard request != nil || sink != nil else {
+                phase = .failed("Kayıt başlatılamadı.")
+                return
+            }
             input.removeTap(onBus: 0)
-            input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0), block: Self.tap(request))
+            input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.tap(request, sink))
             engine.prepare()
             try engine.start()
             text = ""
             phase = .listening
-            task = recognizer.recognitionTask(with: request, resultHandler: Self.handler { [weak self] text, done in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if let text { self.text = text }
-                    if done, self.phase == .listening { self.stopAudio() }
-                }
-            })
+            if let request, let recognizer {
+                task = recognizer.recognitionTask(with: request, resultHandler: Self.handler { [weak self] text, _ in
+                    Task { @MainActor in
+                        guard let self, let text, self.phase == .listening else { return }
+                        self.text = text
+                    }
+                })
+            }
         } catch {
             stopAudio()
+            sink?.discard()
+            sink = nil
             phase = .failed("Kayıt başlatılamadı.")
         }
     }
 
-    /// Stops listening and waits a moment for the last words to come through.
-    func finish() async -> String {
+    /// Stops listening. Returns the live preview and the finished recording, if any; the
+    /// caller deletes the file with `discardRecording()` once it has been sent.
+    func finish() async -> (preview: String, recording: URL?) {
         request?.endAudio()
         stopAudio()
-        try? await Task.sleep(for: .milliseconds(700))
+        sink?.close()
+        try? await Task.sleep(for: .milliseconds(500))
         task?.finish()
         task = nil
         phase = .finished
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), sink?.url)
+    }
+
+    func discardRecording() {
+        sink?.discard()
+        sink = nil
     }
 
     func cancel() {
@@ -78,7 +138,8 @@ final class Dictation {
         task = nil
         request?.endAudio()
         stopAudio()
-        phase = .idle
+        discardRecording()
+        if phase == .listening { phase = .idle }
     }
 
     /// Screenshot runs have no microphone: show a sample note instead.
@@ -94,8 +155,11 @@ final class Dictation {
     }
 
     // Built outside the main actor: the audio and recognition callbacks run on their own queues.
-    nonisolated private static func tap(_ request: SFSpeechAudioBufferRecognitionRequest) -> AVAudioNodeTapBlock {
-        { buffer, _ in request.append(buffer) }
+    nonisolated private static func tap(_ request: SFSpeechAudioBufferRecognitionRequest?, _ sink: AudioSink?) -> AVAudioNodeTapBlock {
+        { buffer, _ in
+            request?.append(buffer)
+            sink?.write(buffer)
+        }
     }
 
     nonisolated private static func handler(
@@ -106,12 +170,11 @@ final class Dictation {
         }
     }
 
-    nonisolated private static func authorize() async -> Bool {
+    nonisolated private static func speechAuthorized() async -> Bool {
         let speech = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
         }
-        guard speech == .authorized else { return false }
-        return await AVAudioApplication.requestRecordPermission()
+        return speech == .authorized
     }
 }
 
@@ -119,10 +182,15 @@ final class Dictation {
 /// into tasks, steps, notes and reminders. Opens listening; one button finishes.
 struct VoiceSheet: View {
     @Environment(AppStore.self) private var store
+    /// The task the note is about, when opened from a task.
+    var taskID: String? = nil
+    /// Opened from the task's note: what is said rewrites that note.
+    var noteOnly = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dictation = Dictation()
     @State private var working = false
+    @State private var workingLabel = "Notun işleniyor…"
     @State private var failure: String?
     /// What was said, kept when the server could not read it, so nothing is lost.
     @State private var spoken = ""
@@ -137,27 +205,31 @@ struct VoiceSheet: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    VStack(spacing: 10) {
-                        ActionButton(title: "Görev olarak ekle", symbol: "tray.and.arrow.down", prominent: true) {
-                            Task {
-                                await store.capture(spoken)
-                                dismiss()
+                    if spoken.isEmpty {
+                        ActionButton(title: "Kapat", symbol: "xmark", prominent: true) { dismiss() }
+                    } else {
+                        VStack(spacing: 10) {
+                            ActionButton(title: "Görev olarak ekle", symbol: "tray.and.arrow.down", prominent: true) {
+                                Task {
+                                    await store.capture(spoken)
+                                    dismiss()
+                                }
                             }
+                            ActionButton(title: "Tekrar dene", symbol: "arrow.clockwise") { Task { await send(spoken) } }
                         }
-                        ActionButton(title: "Tekrar dene", symbol: "arrow.clockwise") { Task { await send(spoken) } }
                     }
                 } else if working {
                     HStack(spacing: 10) {
                         ProgressView()
-                        Text("Notun işleniyor…")
+                        Text(workingLabel)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, minHeight: 56)
                 } else {
                     ActionButton(title: "Bitti", symbol: "checkmark", prominent: true) { Task { await done() } }
                         .accessibilityIdentifier("voice-done")
-                        .disabled(dictation.text.isEmpty && dictation.phase == .listening)
-                    Text("Ses kaydedilmez; yazıya dökülür. Görevlerini düzenlemek için yalnızca bu yazı Claude'a gönderilir.")
+                        .disabled(dictation.phase != .listening)
+                    Text("Kaydın yazıya dökülmesi için ElevenLabs'e gönderilir, yazı da görevlerini düzenlemek için Claude'a. PickUp sesi saklamaz.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -166,7 +238,7 @@ struct VoiceSheet: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.themeBackground)
-            .navigationTitle("Söyle")
+            .navigationTitle(noteOnly ? "Kaldığın yer" : taskID.flatMap { store.tasks[$0]?.title } ?? "Söyle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -201,7 +273,7 @@ struct VoiceSheet: View {
                     .foregroundStyle(Color.themeBrick)
                     .symbolEffect(.variableColor.iterative, isActive: dictation.phase == .listening && !reduceMotion)
                     .accessibilityHidden(true)
-                Text(dictation.text.isEmpty ? "Dinliyorum… Ne yaptığını, nerede kaldığını ya da aklına geleni söyle." : dictation.text)
+                Text(dictation.text.isEmpty ? (noteOnly ? "Dinliyorum… Nerede olduğunu, sırada ne olduğunu söyle." : "Dinliyorum… Ne yaptığını, nerede kaldığını ya da aklına geleni söyle.") : dictation.text)
                     .font(.title3)
                     .foregroundStyle(dictation.text.isEmpty ? .secondary : .primary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -211,7 +283,28 @@ struct VoiceSheet: View {
     }
 
     private func done() async {
-        let text = await dictation.finish()
+        let (preview, recording) = await dictation.finish()
+        var text = preview
+        if let recording, let audio = try? Data(contentsOf: recording), !audio.isEmpty {
+            workingLabel = "Yazıya dökülüyor…"
+            working = true
+            do {
+                // Scribe's text replaces the preview; without it the preview stands in.
+                if let heard = try await store.transcribeVoice(audio), !heard.isEmpty {
+                    text = heard
+                    dictation.text = heard
+                }
+            } catch {
+                if preview.isEmpty {
+                    working = false
+                    dictation.discardRecording()
+                    failure = (error as? LocalizedError)?.errorDescription ?? "Ses yazıya dökülemedi."
+                    return
+                }
+            }
+            working = false
+        }
+        dictation.discardRecording()
         guard !text.isEmpty else {
             dismiss()
             return
@@ -222,9 +315,10 @@ struct VoiceSheet: View {
     private func send(_ text: String) async {
         spoken = text
         failure = nil
+        workingLabel = "Notun işleniyor…"
         working = true
         do {
-            let plan = try await store.interpretVoice(text)
+            let plan = try await store.interpretVoice(text, taskID: taskID, noteOnly: noteOnly)
             await store.apply(plan)
             working = false
             dismiss()
@@ -232,6 +326,26 @@ struct VoiceSheet: View {
             working = false
             failure = (error as? LocalizedError)?.errorDescription ?? "Not işlenemedi."
         }
+    }
+}
+
+/// The mic on a task's "Kaldığın yer" note: say where you are and the note is rewritten
+/// from it (a step, a date or finishing said out loud are applied too).
+struct NoteVoiceButton: View {
+    @Environment(AppStore.self) private var store
+    let task: TaskItem
+
+    var body: some View {
+        Button {
+            store.voiceRequest = VoiceRequest(taskID: task.id, noteOnly: true)
+        } label: {
+            Image(systemName: "mic.fill")
+                .foregroundStyle(Color.themeBrick)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Kaldığın yeri sesle yaz")
     }
 }
 

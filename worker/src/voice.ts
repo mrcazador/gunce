@@ -5,17 +5,21 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { Session } from "./auth";
-import { type Env, HttpError, json, newId, readJson } from "./http";
+import { type Env, HttpError, isUuid, json, newId, readJson } from "./http";
 
-/** Requests per user in 24 hours. Each costs a Claude call. */
-export const VOICE_DAILY_LIMIT = 150;
+/** Requests per user in 24 hours (transcriptions and readings together). Each one costs money. */
+export const VOICE_DAILY_LIMIT = 300;
+/** Recordings up to about five minutes of AAC at 64 kbit/s. */
+const MAX_AUDIO_BYTES = 3 * 1024 * 1024;
+const STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
+const STT_MODEL = "scribe_v2";
 const MODEL = "claude-opus-5-5";
 const MAX_TRANSCRIPT = 4000;
 const MAX_ACTIONS = 12;
 
 type Row = Record<string, unknown>;
 
-const KINDS = ["create_task", "add_steps", "note", "park", "schedule", "complete", "update"] as const;
+const KINDS = ["create_task", "add_steps", "note", "set_note", "park", "schedule", "complete", "update"] as const;
 type Kind = (typeof KINDS)[number];
 const REASONS = ["waiting", "need_info", "later"] as const;
 const SIZES = { small: 1, medium: 2, large: 3 } as const;
@@ -60,7 +64,8 @@ You get the user's areas, their open tasks (with ids, status and open steps), th
 Actions (fill only the fields an action uses; others are null, steps is []):
 - create_task: a new task. title; optional steps, area (one of the area names given), size, due_at, remind_at. Give it a ref like "new1" so later actions in the same plan can point at it via task.
 - add_steps: steps for an existing task (task = its id or a ref).
-- note: something said about a task that is not a step: progress, a detail, a decision. task + note.
+- note: something said about a task that is not a step: progress, a detail, a decision. task + note. It is added to the task's history.
+- set_note: replace the task's "where I left off" note (shown big when the task is picked up again). task + note.
 - park: they are stopping work on the task in hand for now. task + note = where they left off, written so they can pick it up cold later; reason: waiting (waiting for someone's reply), need_info (missing information), later (otherwise).
 - schedule: set due_at and/or remind_at on a task.
 - complete: they finished a task or a step (task = the task's or the step's id).
@@ -81,6 +86,7 @@ interface OpenTask {
   title: string;
   status: string;
   area: string | null;
+  note: string | null;
   steps: { id: string; title: string }[];
 }
 
@@ -95,12 +101,7 @@ export async function voice(req: Request, env: Env, s: Session): Promise<Respons
   // The device's local time with its offset, so "yarın 10'da" lands in the user's day.
   const localNow = typeof body.now === "string" && !Number.isNaN(Date.parse(body.now)) ? body.now : new Date().toISOString();
 
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM voice_requests WHERE user_id = ? AND created_at > ?")
-    .bind(s.userId, since)
-    .first<{ n: number }>();
-  if ((used?.n ?? 0) >= VOICE_DAILY_LIMIT) throw new HttpError(429, "voice_limit", "Daily voice note limit reached");
-  await env.DB.prepare("INSERT INTO voice_requests (id, user_id) VALUES (?, ?)").bind(newId(), s.userId).run();
+  await countRequest(env, s);
 
   const areas = (
     await env.DB.prepare("SELECT id, name FROM areas WHERE user_id = ? AND deleted_at IS NULL ORDER BY sort")
@@ -109,19 +110,26 @@ export async function voice(req: Request, env: Env, s: Session): Promise<Respons
   ).results;
   const rows = (
     await env.DB.prepare(
-      `SELECT id, parent_id, title, status, area_id FROM tasks
+      `SELECT id, parent_id, title, status, area_id, park_note FROM tasks
        WHERE user_id = ? AND deleted_at IS NULL AND status IN ('inbox', 'active', 'parked')
        ORDER BY (status = 'active') DESC, updated_at DESC LIMIT 400`,
     )
       .bind(s.userId)
-      .all<{ id: string; parent_id: string | null; title: string; status: string; area_id: string | null }>()
+      .all<{ id: string; parent_id: string | null; title: string; status: string; area_id: string | null; park_note: string | null }>()
   ).results;
 
   const areaName = new Map(areas.map((a) => [a.id, a.name]));
   const tasks = new Map<string, OpenTask>();
   for (const r of rows) {
     if (r.parent_id === null && tasks.size < 80) {
-      tasks.set(r.id, { id: r.id, title: r.title, status: r.status, area: r.area_id ? areaName.get(r.area_id) ?? null : null, steps: [] });
+      tasks.set(r.id, {
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        area: r.area_id ? areaName.get(r.area_id) ?? null : null,
+        note: r.park_note,
+        steps: [],
+      });
     }
   }
   const stepIds = new Set<string>();
@@ -133,11 +141,24 @@ export async function voice(req: Request, env: Env, s: Session): Promise<Respons
     }
   }
   const active = [...tasks.values()].find((t) => t.status === "active");
+  // Opened from a task: the note is about that task unless it clearly says otherwise.
+  const focusId = isUuid(body.task_id) ? body.task_id.toLowerCase() : null;
+  const focus = focusId ? tasks.get(focusId) : undefined;
+  // Recorded from the task's "Kaldığın yer" note: the note itself is what changes.
+  const noteMode = !!focus && body.focus === "note";
 
   const context = [
     `Current local time: ${localNow}`,
     `Areas: ${areas.map((a) => a.name).join(", ") || "(none)"}`,
     `Task in hand: ${active ? `${active.id} "${active.title}"` : "(none)"}`,
+    ...(focus
+      ? [`The user opened this task and is talking about it: ${focus.id} "${focus.title}". Apply what they say to it (steps, notes, dates, a break, finishing) unless they clearly mean another task.`]
+      : []),
+    ...(noteMode && focus
+      ? [
+          `They are dictating this task's "where I left off" note. Its current note: ${focus.note ? `"${focus.note}"` : "(empty)"}. Return set_note for this task with the updated note: what they said, merged with what still holds from the current note, in one or two short Turkish sentences written so they can pick the work up cold. Add other actions only when they explicitly ask for them (a step, a date, a reminder, finishing).`,
+        ]
+      : []),
     "Open tasks:",
     ...[...tasks.values()].map((t) => {
       const head = `- ${t.id} [${t.status}${t.area ? `, ${t.area}` : ""}] ${t.title}`;
@@ -178,6 +199,55 @@ export async function voice(req: Request, env: Env, s: Session): Promise<Respons
   }
   const known = new Set([...tasks.keys(), ...stepIds]);
   return json(validatePlan(plan, known, stepIds, areas));
+}
+
+/** Counts one request against the daily limit, or refuses it. */
+async function countRequest(env: Env, s: Session): Promise<void> {
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM voice_requests WHERE user_id = ? AND created_at > ?")
+    .bind(s.userId, since)
+    .first<{ n: number }>();
+  if ((used?.n ?? 0) >= VOICE_DAILY_LIMIT) throw new HttpError(429, "voice_limit", "Daily voice note limit reached");
+  await env.DB.prepare("INSERT INTO voice_requests (id, user_id) VALUES (?, ?)").bind(newId(), s.userId).run();
+}
+
+/**
+ * `POST /v1/voice/transcribe`: the recorded note (AAC in an .m4a container, sent as the raw
+ * body) goes to ElevenLabs Scribe for Turkish speech to text; the text comes back. Neither the
+ * audio nor the text is stored here.
+ */
+export async function transcribe(req: Request, env: Env, s: Session): Promise<Response> {
+  if (s.kind !== "app") throw new HttpError(403, "forbidden");
+  if (!env.ELEVENLABS_API_KEY) throw new HttpError(503, "transcribe_not_configured", "Speech to text is not set up on this server");
+  const type = (req.headers.get("content-type") ?? "").toLowerCase();
+  if (!type.startsWith("audio/")) throw new HttpError(415, "unsupported_media_type", "Send the recording as audio/*");
+  if (Number(req.headers.get("content-length") ?? "0") > MAX_AUDIO_BYTES) throw new HttpError(413, "payload_too_large");
+  const audio = await req.arrayBuffer();
+  if (audio.byteLength === 0) throw new HttpError(400, "invalid_field", "The recording is empty");
+  if (audio.byteLength > MAX_AUDIO_BYTES) throw new HttpError(413, "payload_too_large");
+  await countRequest(env, s);
+
+  const form = new FormData();
+  form.append("model_id", STT_MODEL);
+  form.append("language_code", "tr");
+  // Drops "ıı", false starts and coughs: the text is read by Claude next, not shown verbatim.
+  form.append("no_verbatim", "true");
+  form.append("tag_audio_events", "false");
+  form.append("timestamps_granularity", "none");
+  form.append("file", new Blob([audio], { type: type.split(";")[0] }), "note.m4a");
+  let res: Response;
+  try {
+    res = await fetch(STT_URL, { method: "POST", headers: { "xi-api-key": env.ELEVENLABS_API_KEY }, body: form });
+  } catch {
+    throw new HttpError(502, "transcribe_unavailable");
+  }
+  if (!res.ok) {
+    console.error("transcribe: elevenlabs error", res.status);
+    throw new HttpError(res.status === 429 ? 503 : 502, res.status === 429 ? "voice_busy" : "transcribe_unavailable");
+  }
+  const result = (await res.json().catch(() => null)) as { text?: unknown } | null;
+  const text = typeof result?.text === "string" ? result.text.trim() : "";
+  return json({ text: [...text].slice(0, MAX_TRANSCRIPT).join("") });
 }
 
 const clip = (v: unknown, max: number): string | null => {
@@ -226,8 +296,8 @@ export function validatePlan(plan: unknown, known: Set<string>, stepIds: Set<str
       continue;
     }
     // Only a task, not a step, can be parked, scheduled or renamed.
-    if ((kind === "park" || kind === "update" || kind === "add_steps") && action.task_id && stepIds.has(action.task_id)) continue;
-    if ((kind === "note" || kind === "park") && !action.note) continue;
+    if ((kind === "park" || kind === "update" || kind === "add_steps" || kind === "set_note") && action.task_id && stepIds.has(action.task_id)) continue;
+    if ((kind === "note" || kind === "park" || kind === "set_note") && !action.note) continue;
     if (kind === "add_steps" && steps.length === 0) continue;
     out.push(action);
   }
