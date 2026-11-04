@@ -119,6 +119,8 @@ final class Dictation {
 /// into tasks, steps, notes and reminders. Opens listening; one button finishes.
 struct VoiceSheet: View {
     @Environment(AppStore.self) private var store
+    /// The task the note is about, when opened from a task.
+    var taskID: String? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dictation = Dictation()
@@ -166,7 +168,7 @@ struct VoiceSheet: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.themeBackground)
-            .navigationTitle("Söyle")
+            .navigationTitle(taskID.flatMap { store.tasks[$0]?.title } ?? "Söyle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -224,7 +226,7 @@ struct VoiceSheet: View {
         failure = nil
         working = true
         do {
-            let plan = try await store.interpretVoice(text)
+            let plan = try await store.interpretVoice(text, taskID: taskID)
             await store.apply(plan)
             working = false
             dismiss()
@@ -232,6 +234,25 @@ struct VoiceSheet: View {
             working = false
             failure = (error as? LocalizedError)?.errorDescription ?? "Not işlenemedi."
         }
+    }
+}
+
+/// A mic that opens a voice note about one task: say the next steps, where you are, a date.
+struct TaskVoiceButton: View {
+    @Environment(AppStore.self) private var store
+    let task: TaskItem
+
+    var body: some View {
+        Button {
+            store.voiceRequest = VoiceRequest(taskID: task.id)
+        } label: {
+            Image(systemName: "mic.fill")
+                .foregroundStyle(Color.themeBrick)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Bu göreve sesli not")
     }
 }
 

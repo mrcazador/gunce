@@ -69,8 +69,8 @@ struct MainTabs: View {
         .sheet(item: $store.captureRequest) { request in
             CaptureSheet(request: request)
         }
-        .sheet(isPresented: $store.voiceRequested) {
-            VoiceSheet()
+        .sheet(item: $store.voiceRequest) { request in
+            VoiceSheet(taskID: request.taskID)
         }
         .sheet(item: $store.limitRequest) { request in
             LimitSheet(request: request)

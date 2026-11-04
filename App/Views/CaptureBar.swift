@@ -26,7 +26,7 @@ struct CaptureBar: View {
             .accessibilityLabel("Yeni görev ekle")
             // Say it instead: tasks, steps, notes and reminders from one spoken note.
             Button {
-                store.voiceRequested = true
+                store.voiceRequest = VoiceRequest()
             } label: {
                 Image(systemName: "mic.fill")
                     .font(.title3)

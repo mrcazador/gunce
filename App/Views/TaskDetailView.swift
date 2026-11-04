@@ -204,6 +204,9 @@ private struct TaskDetailForm: View {
                     .focused($focus, equals: .newStep)
                     .submitLabel(.next)
                     .onSubmit(addStep)
+                if task.status.isOpen {
+                    TaskVoiceButton(task: task)
+                }
             }
         } header: {
             HStack {

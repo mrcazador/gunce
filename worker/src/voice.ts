@@ -5,7 +5,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { Session } from "./auth";
-import { type Env, HttpError, json, newId, readJson } from "./http";
+import { type Env, HttpError, isUuid, json, newId, readJson } from "./http";
 
 /** Requests per user in 24 hours. Each costs a Claude call. */
 export const VOICE_DAILY_LIMIT = 150;
@@ -133,11 +133,17 @@ export async function voice(req: Request, env: Env, s: Session): Promise<Respons
     }
   }
   const active = [...tasks.values()].find((t) => t.status === "active");
+  // Opened from a task: the note is about that task unless it clearly says otherwise.
+  const focusId = isUuid(body.task_id) ? body.task_id.toLowerCase() : null;
+  const focus = focusId ? tasks.get(focusId) : undefined;
 
   const context = [
     `Current local time: ${localNow}`,
     `Areas: ${areas.map((a) => a.name).join(", ") || "(none)"}`,
     `Task in hand: ${active ? `${active.id} "${active.title}"` : "(none)"}`,
+    ...(focus
+      ? [`The user opened this task and is talking about it: ${focus.id} "${focus.title}". Apply what they say to it (steps, notes, dates, a break, finishing) unless they clearly mean another task.`]
+      : []),
     "Open tasks:",
     ...[...tasks.values()].map((t) => {
       const head = `- ${t.id} [${t.status}${t.area ? `, ${t.area}` : ""}] ${t.title}`;

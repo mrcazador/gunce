@@ -68,7 +68,8 @@ record `claude`.
 ## Voice notes
 
 `POST /v1/voice` (`transcript`: what was said, up to 4000 characters, turned into text on the
-device; `now`: the device's local time as ISO 8601 with its offset). App sessions only. The
+device; `now`: the device's local time as ISO 8601 with its offset; optional `task_id`: the open
+task the note is about, when recorded from a task). App sessions only. The
 Worker reads the transcript with Claude against the user's open tasks and returns
 `{ summary, actions }`; it stores no transcript. Each action has `kind` (`create_task`,
 `add_steps`, `note`, `park`, `schedule`, `complete`, `update`), `task_id` (one of the user's

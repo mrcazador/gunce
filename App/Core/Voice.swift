@@ -1,5 +1,12 @@
 import Foundation
 
+/// Opens the voice note sheet. With a task, what is said is about that task first: its steps,
+/// notes, dates and break.
+struct VoiceRequest: Identifiable {
+    let id = UUID()
+    var taskID: String? = nil
+}
+
 /// The changes Claude read in a voice note (see `POST /v1/voice` in docs/API.md). The Worker
 /// has already dropped anything that points outside the user's own open tasks.
 struct VoicePlan: Decodable {

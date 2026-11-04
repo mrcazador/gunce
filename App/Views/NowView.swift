@@ -383,6 +383,7 @@ private struct FirstStepField: View {
                 .onSubmit(add)
                 .accessibilityLabel(isFirst ? "İlk adım" : "Yeni adım")
                 .accessibilityHint("Yazdığın metin görevin sonuna yeni bir adım olarak eklenir")
+            TaskVoiceButton(task: task)
         }
         .frame(minHeight: 44)
     }

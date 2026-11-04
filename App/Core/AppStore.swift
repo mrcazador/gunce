@@ -55,8 +55,8 @@ final class AppStore {
     var errorMessage: String? = nil
     /// The quick-capture sheet, optionally with a date already set (from the calendar).
     var captureRequest: CaptureRequest? = nil
-    /// The voice note sheet is open.
-    var voiceRequested = false
+    /// The voice note sheet is open, for anything or for one task.
+    var voiceRequest: VoiceRequest? = nil
     /// What the last voice note changed, offered back for a few seconds.
     var lastVoice: VoiceUndo? = nil
     /// A task to open, e.g. from a notification tap.
@@ -336,13 +336,15 @@ final class AppStore {
 
     /// Sends what was said (text only; speech is recognised on the device) and gets back the
     /// changes Claude read in it. Demo runs answer with a plain new task.
-    func interpretVoice(_ transcript: String) async throws -> VoicePlan {
+    func interpretVoice(_ transcript: String, taskID: String? = nil) async throws -> VoicePlan {
         guard let api else {
             if isDemo { return VoicePlan.demo(transcript) }
             throw APIError(status: 0, code: "not_configured", message: nil)
         }
         let now = Date.ISO8601FormatStyle(timeZoneSeparator: .colon, timeZone: .current).format(.now)
-        return try await api.request("POST", "v1/voice", body: ["transcript": transcript, "now": now], as: VoicePlan.self)
+        var body: [String: Any] = ["transcript": transcript, "now": now]
+        if let taskID { body["task_id"] = taskID }
+        return try await api.request("POST", "v1/voice", body: body, as: VoicePlan.self)
     }
 
     /// Starts a task. If another task is active, asks for a "nerede kaldın?" note first.
