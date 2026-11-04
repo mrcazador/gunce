@@ -336,7 +336,7 @@ final class AppStore {
 
     /// Sends what was said (text only; speech is recognised on the device) and gets back the
     /// changes Claude read in it. Demo runs answer with a plain new task.
-    func interpretVoice(_ transcript: String, taskID: String? = nil) async throws -> VoicePlan {
+    func interpretVoice(_ transcript: String, taskID: String? = nil, noteOnly: Bool = false) async throws -> VoicePlan {
         guard let api else {
             if isDemo { return VoicePlan.demo(transcript) }
             throw APIError(status: 0, code: "not_configured", message: nil)
@@ -344,6 +344,7 @@ final class AppStore {
         let now = Date.ISO8601FormatStyle(timeZoneSeparator: .colon, timeZone: .current).format(.now)
         var body: [String: Any] = ["transcript": transcript, "now": now]
         if let taskID { body["task_id"] = taskID }
+        if noteOnly { body["focus"] = "note" }
         return try await api.request("POST", "v1/voice", body: body, as: VoicePlan.self)
     }
 
@@ -523,6 +524,7 @@ final class AppStore {
         if a.title != b.title { fields["title"] = b.title }
         if a.details != b.details { fields["details"] = JSONCoding.value(b.details) }
         if a.nextStep != b.nextStep { fields["next_step"] = JSONCoding.value(b.nextStep) }
+        if a.parkNote != b.parkNote { fields["park_note"] = JSONCoding.value(b.parkNote) }
         if a.areaId != b.areaId { fields["area_id"] = (b.areaId as Any?) ?? NSNull() }
         if a.dueAt != b.dueAt { fields["due_at"] = JSONCoding.value(b.dueAt) }
         if a.remindAt != b.remindAt { fields["remind_at"] = JSONCoding.value(b.remindAt) }

@@ -70,7 +70,7 @@ struct MainTabs: View {
             CaptureSheet(request: request)
         }
         .sheet(item: $store.voiceRequest) { request in
-            VoiceSheet(taskID: request.taskID)
+            VoiceSheet(taskID: request.taskID, noteOnly: request.noteOnly)
         }
         .sheet(item: $store.limitRequest) { request in
             LimitSheet(request: request)

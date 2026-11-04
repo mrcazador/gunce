@@ -69,10 +69,11 @@ record `claude`.
 
 `POST /v1/voice` (`transcript`: what was said, up to 4000 characters, turned into text on the
 device; `now`: the device's local time as ISO 8601 with its offset; optional `task_id`: the open
-task the note is about, when recorded from a task). App sessions only. The
+task the note is about; `focus`: `note` when recorded from that task's "Kaldığın yer" note, so the
+note is rewritten from what was said). App sessions only. The
 Worker reads the transcript with Claude against the user's open tasks and returns
 `{ summary, actions }`; it stores no transcript. Each action has `kind` (`create_task`,
-`add_steps`, `note`, `park`, `schedule`, `complete`, `update`), `task_id` (one of the user's
+`add_steps`, `note`, `set_note` (replace the park note), `park`, `schedule`, `complete`, `update`), `task_id` (one of the user's
 open tasks or steps) or `task_ref` (the `ref` of a `create_task` earlier in the same plan),
 `title`, `steps`, `note`, `reason`, `area_id`, `priority`, `due_at`, `remind_at`. Actions that
 point anywhere else are dropped. The app applies the plan through the endpoints above.

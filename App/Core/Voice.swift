@@ -5,6 +5,8 @@ import Foundation
 struct VoiceRequest: Identifiable {
     let id = UUID()
     var taskID: String? = nil
+    /// Recorded from the task's "Kaldığın yer" note: what is said rewrites that note.
+    var noteOnly = false
 }
 
 /// The changes Claude read in a voice note (see `POST /v1/voice` in docs/API.md). The Worker
@@ -95,6 +97,10 @@ extension AppStore {
             case "note":
                 guard let task = target(action), let note = action.note else { continue }
                 await addNote(note, to: task)
+            case "set_note":
+                guard let task = target(action), let note = action.note else { continue }
+                remember(task)
+                await edit(task) { $0.parkNote = note }
             case "park":
                 guard let task = target(action), task.status == .active, let note = action.note else { continue }
                 // No room for another break: keep what was said as a note instead.
@@ -151,6 +157,7 @@ extension AppStore {
                 $0.priority = before.priority
                 $0.dueAt = before.dueAt
                 $0.remindAt = before.remindAt
+                $0.parkNote = before.parkNote
             }
         }
         if let id = undo.parked, activeTask == nil, let task = tasks[id] {

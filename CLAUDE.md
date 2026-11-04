@@ -66,7 +66,8 @@ and fix it.
 - **Voice notes** ("Söyle", the mic in the capture bar): speech is turned into text on the phone
   (`SFSpeechRecognizer`, tr-TR); only the text goes to `POST /v1/voice`, where Claude
   (`worker/src/voice.ts`, structured output) reads it against the user's open tasks and returns
-  a plan (create task, steps, note, park, schedule, complete, update). The app applies the plan
+  a plan (create task, steps, note, set_note, park, schedule, complete, update). The mic on a task's
+  "Kaldığın yer" note (Şimdi and the detail) sends `task_id` + `focus: note`, so it rewrites that note. The app applies the plan
   through the ordinary endpoints and offers "Geri al". The Worker stores no transcript; the key is
   the `ANTHROPIC_API_KEY` Worker secret, set by `deploy-worker.yml` from the repository secret.
 - **Şehir** (gamification): every top-level task is a building, derived from tasks and İz only

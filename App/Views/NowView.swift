@@ -316,22 +316,33 @@ private struct ActiveTaskCard: View {
             let progress = store.progress(of: task.id)
             let note = task.parkNote ?? ""
             // Resumed from a break: where you left off comes first, big enough to read at a glance.
-            if !note.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+            // The mic rewrites this note from what you say.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
                     Text("Kaldığın yer")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
+                    Spacer(minLength: 0)
+                    NoteVoiceButton(task: task)
+                        .padding(.vertical, -10)
+                }
+                if note.isEmpty {
+                    Text("Nerede olduğunu söyle, not buraya yazılsın.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
                     Text(note)
                         .font(.system(.title3, design: .serif).italic())
-                                    .fontDesign(.serif)
+                        .fontDesign(.serif)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("Kaldığın yer: \(note)")
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.themeBackground, in: RoundedRectangle(cornerRadius: 14))
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.themeBackground, in: RoundedRectangle(cornerRadius: 14))
             if let step = store.nextStep(of: task.id) {
                 NextStepRow(step: step, done: progress.done, total: progress.total)
             } else if let next = task.nextStep, !next.isEmpty {
@@ -383,7 +394,6 @@ private struct FirstStepField: View {
                 .onSubmit(add)
                 .accessibilityLabel(isFirst ? "İlk adım" : "Yeni adım")
                 .accessibilityHint("Yazdığın metin görevin sonuna yeni bir adım olarak eklenir")
-            TaskVoiceButton(task: task)
         }
         .frame(minHeight: 44)
     }

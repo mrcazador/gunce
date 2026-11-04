@@ -121,6 +121,8 @@ struct VoiceSheet: View {
     @Environment(AppStore.self) private var store
     /// The task the note is about, when opened from a task.
     var taskID: String? = nil
+    /// Opened from the task's note: what is said rewrites that note.
+    var noteOnly = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dictation = Dictation()
@@ -168,7 +170,7 @@ struct VoiceSheet: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.themeBackground)
-            .navigationTitle(taskID.flatMap { store.tasks[$0]?.title } ?? "Söyle")
+            .navigationTitle(noteOnly ? "Kaldığın yer" : taskID.flatMap { store.tasks[$0]?.title } ?? "Söyle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -203,7 +205,7 @@ struct VoiceSheet: View {
                     .foregroundStyle(Color.themeBrick)
                     .symbolEffect(.variableColor.iterative, isActive: dictation.phase == .listening && !reduceMotion)
                     .accessibilityHidden(true)
-                Text(dictation.text.isEmpty ? "Dinliyorum… Ne yaptığını, nerede kaldığını ya da aklına geleni söyle." : dictation.text)
+                Text(dictation.text.isEmpty ? (noteOnly ? "Dinliyorum… Nerede olduğunu, sırada ne olduğunu söyle." : "Dinliyorum… Ne yaptığını, nerede kaldığını ya da aklına geleni söyle.") : dictation.text)
                     .font(.title3)
                     .foregroundStyle(dictation.text.isEmpty ? .secondary : .primary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -226,7 +228,7 @@ struct VoiceSheet: View {
         failure = nil
         working = true
         do {
-            let plan = try await store.interpretVoice(text, taskID: taskID)
+            let plan = try await store.interpretVoice(text, taskID: taskID, noteOnly: noteOnly)
             await store.apply(plan)
             working = false
             dismiss()
@@ -237,14 +239,15 @@ struct VoiceSheet: View {
     }
 }
 
-/// A mic that opens a voice note about one task: say the next steps, where you are, a date.
-struct TaskVoiceButton: View {
+/// The mic on a task's "Kaldığın yer" note: say where you are and the note is rewritten
+/// from it (a step, a date or finishing said out loud are applied too).
+struct NoteVoiceButton: View {
     @Environment(AppStore.self) private var store
     let task: TaskItem
 
     var body: some View {
         Button {
-            store.voiceRequest = VoiceRequest(taskID: task.id)
+            store.voiceRequest = VoiceRequest(taskID: task.id, noteOnly: true)
         } label: {
             Image(systemName: "mic.fill")
                 .foregroundStyle(Color.themeBrick)
@@ -252,7 +255,7 @@ struct TaskVoiceButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Bu göreve sesli not")
+        .accessibilityLabel("Kaldığın yeri sesle yaz")
     }
 }
 
