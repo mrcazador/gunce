@@ -55,6 +55,30 @@ final class APIClient {
         return try decoder.decode(T.self, from: data)
     }
 
+    /// Sends raw bytes (a recording) and decodes the JSON answer. Not retried: uploads are slow
+    /// and the user can simply try again.
+    func upload<T: Decodable>(_ path: String, data: Data, contentType: String, timeout: TimeInterval = 60, as type: T.Type) async throws -> T {
+        var req = URLRequest(url: baseURL.appendingPathComponent(path))
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (body, response): (Data, URLResponse)
+        do {
+            (body, response) = try await session.upload(for: req, from: data)
+        } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+            throw APIError(status: 0, code: "offline", message: (error as? URLError).map { "kod \($0.code.rawValue)" })
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let err = try? decoder.decode(APIErrorBody.self, from: body)
+            throw APIError(status: status, code: err?.error ?? "http_\(status)", message: err?.message)
+        }
+        return try decoder.decode(T.self, from: body)
+    }
+
     func send(_ method: String, _ path: String, body: [String: Any]? = nil) async throws {
         _ = try await perform(method, path, query: [], body: body)
     }

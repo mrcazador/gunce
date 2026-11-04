@@ -334,7 +334,19 @@ final class AppStore {
 
     // MARK: - Voice notes
 
-    /// Sends what was said (text only; speech is recognised on the device) and gets back the
+    /// Turns a recorded voice note into text with the server's speech to text (ElevenLabs
+    /// Scribe). Nil when that is not set up, so the caller keeps Apple's text.
+    func transcribeVoice(_ audio: Data) async throws -> String? {
+        guard let api else { return nil }
+        struct Answer: Decodable { let text: String }
+        do {
+            return try await api.upload("v1/voice/transcribe", data: audio, contentType: "audio/mp4", as: Answer.self).text
+        } catch let error as APIError where error.code == "transcribe_not_configured" {
+            return nil
+        }
+    }
+
+    /// Sends what was said (as text) and gets back the
     /// changes Claude read in it. Demo runs answer with a plain new task.
     func interpretVoice(_ transcript: String, taskID: String? = nil, noteOnly: Bool = false) async throws -> VoicePlan {
         guard let api else {

@@ -77,8 +77,14 @@ Worker reads the transcript with Claude against the user's open tasks and return
 open tasks or steps) or `task_ref` (the `ref` of a `create_task` earlier in the same plan),
 `title`, `steps`, `note`, `reason`, `area_id`, `priority`, `due_at`, `remind_at`. Actions that
 point anywhere else are dropped. The app applies the plan through the endpoints above.
-At most 150 requests a user per 24 hours (`429 voice_limit`); `503 voice_not_configured`
+At most 300 voice requests a user per 24 hours (`429 voice_limit`); `503 voice_not_configured`
 when the `ANTHROPIC_API_KEY` Worker secret is not set.
+
+`POST /v1/voice/transcribe` (raw `audio/*` body, an .m4a recording up to 3 MB). App sessions
+only; counts toward the same daily limit (300 voice requests in 24 hours). The Worker sends the
+audio to ElevenLabs Scribe (`scribe_v2`, Turkish) and returns `{ text }`; it stores neither.
+`503 transcribe_not_configured` without the `ELEVENLABS_API_KEY` Worker secret (the app then
+keeps Apple's on-device text).
 
 ## Devices
 

@@ -63,8 +63,10 @@ and fix it.
   ways: timed tasks go to a dedicated "PickUp" calendar, and calendar events appear in "Bugün"
   (under Şimdi, with the full day and week behind "Haftayı gör").
 - Tasks Claude creates have `created_via = 'claude'`.
-- **Voice notes** ("Söyle", the mic in the capture bar): speech is turned into text on the phone
-  (`SFSpeechRecognizer`, tr-TR); only the text goes to `POST /v1/voice`, where Claude
+- **Voice notes** ("Söyle", the mic in the capture bar): the note is recorded (.m4a) and turned into
+  text by ElevenLabs Scribe through `POST /v1/voice/transcribe` (secret `ELEVENLABS_API_KEY`);
+  `SFSpeechRecognizer` (tr-TR) only shows a live preview and stands in when Scribe is not set up.
+  The text then goes to `POST /v1/voice`, where Claude
   (`worker/src/voice.ts`, structured output) reads it against the user's open tasks and returns
   a plan (create task, steps, note, set_note, park, schedule, complete, update). The mic on a task's
   "Kaldığın yer" note (Şimdi and the detail) sends `task_id` + `focus: note`, so it rewrites that note. The app applies the plan

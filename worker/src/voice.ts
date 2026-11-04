@@ -7,8 +7,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Session } from "./auth";
 import { type Env, HttpError, isUuid, json, newId, readJson } from "./http";
 
-/** Requests per user in 24 hours. Each costs a Claude call. */
-export const VOICE_DAILY_LIMIT = 150;
+/** Requests per user in 24 hours (transcriptions and readings together). Each one costs money. */
+export const VOICE_DAILY_LIMIT = 300;
+/** Recordings up to about five minutes of AAC at 64 kbit/s. */
+const MAX_AUDIO_BYTES = 3 * 1024 * 1024;
+const STT_URL = "https://api.elevenlabs.io/v1/speech-to-text";
+const STT_MODEL = "scribe_v2";
 const MODEL = "claude-opus-5-5";
 const MAX_TRANSCRIPT = 4000;
 const MAX_ACTIONS = 12;
@@ -97,12 +101,7 @@ export async function voice(req: Request, env: Env, s: Session): Promise<Respons
   // The device's local time with its offset, so "yarın 10'da" lands in the user's day.
   const localNow = typeof body.now === "string" && !Number.isNaN(Date.parse(body.now)) ? body.now : new Date().toISOString();
 
-  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-  const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM voice_requests WHERE user_id = ? AND created_at > ?")
-    .bind(s.userId, since)
-    .first<{ n: number }>();
-  if ((used?.n ?? 0) >= VOICE_DAILY_LIMIT) throw new HttpError(429, "voice_limit", "Daily voice note limit reached");
-  await env.DB.prepare("INSERT INTO voice_requests (id, user_id) VALUES (?, ?)").bind(newId(), s.userId).run();
+  await countRequest(env, s);
 
   const areas = (
     await env.DB.prepare("SELECT id, name FROM areas WHERE user_id = ? AND deleted_at IS NULL ORDER BY sort")
@@ -200,6 +199,55 @@ export async function voice(req: Request, env: Env, s: Session): Promise<Respons
   }
   const known = new Set([...tasks.keys(), ...stepIds]);
   return json(validatePlan(plan, known, stepIds, areas));
+}
+
+/** Counts one request against the daily limit, or refuses it. */
+async function countRequest(env: Env, s: Session): Promise<void> {
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM voice_requests WHERE user_id = ? AND created_at > ?")
+    .bind(s.userId, since)
+    .first<{ n: number }>();
+  if ((used?.n ?? 0) >= VOICE_DAILY_LIMIT) throw new HttpError(429, "voice_limit", "Daily voice note limit reached");
+  await env.DB.prepare("INSERT INTO voice_requests (id, user_id) VALUES (?, ?)").bind(newId(), s.userId).run();
+}
+
+/**
+ * `POST /v1/voice/transcribe`: the recorded note (AAC in an .m4a container, sent as the raw
+ * body) goes to ElevenLabs Scribe for Turkish speech to text; the text comes back. Neither the
+ * audio nor the text is stored here.
+ */
+export async function transcribe(req: Request, env: Env, s: Session): Promise<Response> {
+  if (s.kind !== "app") throw new HttpError(403, "forbidden");
+  if (!env.ELEVENLABS_API_KEY) throw new HttpError(503, "transcribe_not_configured", "Speech to text is not set up on this server");
+  const type = (req.headers.get("content-type") ?? "").toLowerCase();
+  if (!type.startsWith("audio/")) throw new HttpError(415, "unsupported_media_type", "Send the recording as audio/*");
+  if (Number(req.headers.get("content-length") ?? "0") > MAX_AUDIO_BYTES) throw new HttpError(413, "payload_too_large");
+  const audio = await req.arrayBuffer();
+  if (audio.byteLength === 0) throw new HttpError(400, "invalid_field", "The recording is empty");
+  if (audio.byteLength > MAX_AUDIO_BYTES) throw new HttpError(413, "payload_too_large");
+  await countRequest(env, s);
+
+  const form = new FormData();
+  form.append("model_id", STT_MODEL);
+  form.append("language_code", "tr");
+  // Drops "ıı", false starts and coughs: the text is read by Claude next, not shown verbatim.
+  form.append("no_verbatim", "true");
+  form.append("tag_audio_events", "false");
+  form.append("timestamps_granularity", "none");
+  form.append("file", new Blob([audio], { type: type.split(";")[0] }), "note.m4a");
+  let res: Response;
+  try {
+    res = await fetch(STT_URL, { method: "POST", headers: { "xi-api-key": env.ELEVENLABS_API_KEY }, body: form });
+  } catch {
+    throw new HttpError(502, "transcribe_unavailable");
+  }
+  if (!res.ok) {
+    console.error("transcribe: elevenlabs error", res.status);
+    throw new HttpError(res.status === 429 ? 503 : 502, res.status === 429 ? "voice_busy" : "transcribe_unavailable");
+  }
+  const result = (await res.json().catch(() => null)) as { text?: unknown } | null;
+  const text = typeof result?.text === "string" ? result.text.trim() : "";
+  return json({ text: [...text].slice(0, MAX_TRANSCRIPT).join("") });
 }
 
 const clip = (v: unknown, max: number): string | null => {

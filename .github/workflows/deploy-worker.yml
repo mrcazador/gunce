@@ -93,6 +93,19 @@ jobs:
           printf '%s' "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY > /dev/null
           echo "Voice notes key set."
 
+      - name: Set the ElevenLabs key for speech to text
+        # Optional: without the ELEVENLABS_API_KEY repository secret the app falls back to
+        # Apple's speech recognition.
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+        run: |
+          if [ -z "$ELEVENLABS_API_KEY" ]; then
+            echo "::notice::ELEVENLABS_API_KEY is not set; the app uses Apple's speech recognition."
+            exit 0
+          fi
+          printf '%s' "$ELEVENLABS_API_KEY" | npx wrangler secret put ELEVENLABS_API_KEY > /dev/null
+          echo "Speech to text key set."
+
       - name: Smoke test
         run: |
           sub="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
